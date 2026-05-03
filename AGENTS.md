@@ -1,14 +1,29 @@
 # Caprine AGENTS.md
 
+## Project Overview
+
+Elegant Facebook Messenger desktop app built with Electron.
+
+**Key paths:**
+- `source/` - Main TypeScript source code
+- `source/index.ts` - Electron main process entry point
+- `source/browser/` - Renderer process code
+- `css/` - Custom stylesheets (browser.css, dark-mode.css, etc.)
+- `dist-js/` - TypeScript build output
+- `static/` - Assets (sounds, images)
+
 ## Build/Lint/Test Commands
 
-- **Build**: `npm run build` or `npm run start` (runs TypeScript compiler)
-- **Lint**: `npm run lint` (runs both `npm run lint:xo` and `npm run lint:stylelint`)
-- **Type checking**: `npm run test:tsc` (runs `npm run build`)
-- **Full test suite**: `npm run test` (type check + lint)
-- **Distribution**: `npm run dist:mac`, `npm run dist:linux`, or `npm run dist:win`
+- **Install**: `npm install` (runs `patch-package` and `electron-builder install-app-deps`)
+- **Dev run**: `npm start` (compiles TS then runs Electron)
+- **Build**: `npm run build` (TypeScript only, outputs to `dist-js/`)
+- **Lint**: `npm run lint` (XO for TS/JS, stylelint for CSS)
+- **Type check**: `npm run test:tsc`
+- **Full test**: `npm run test` (typecheck + lint, no unit tests)
+- **Distribution**: `npm run dist:mac`, `npm run dist:linux`, `npm run dist:win`
+- **RPM builds**: `bash build-rpm.sh` (custom script, not electron-builder)
 
-Note: There are no unit tests in this project. The test command only runs type checking and linting.
+**CI runs:** tsc, xo, stylelint, rpmspec validation
 
 ## Code Style Guidelines
 
@@ -85,15 +100,6 @@ Note: There are no unit tests in this project. The test command only runs type c
 - CommonJS `require()` allowed when needed (e.g., electron modules)
 - Import from `./` relative paths within project
 - Order: external libs → internal modules → types
-
-## Additional Notes
-
-- **Electron version**: v29.0.1
-- **Node requirement**: >=16
-- **Main output**: `dist-js/` directory
-- **Build system**: TypeScript + electron-builder
-- **License**: MIT
-- **Platform support**: macOS, Linux, Windows
 
 ## Cursor/Copilot Rules
 
