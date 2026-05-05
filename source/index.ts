@@ -874,7 +874,7 @@ ipc.answerRenderer(
 			title,
 			body: config.get('notificationMessagePreview') ? body : 'You have a new message',
 			hasReply: true,
-			icon: nativeImage.createFromDataURL(icon),
+			...(icon ? {icon: nativeImage.createFromDataURL(icon)} : {}),
 			silent: silent || is.linux || is.macos,
 		});
 
@@ -917,6 +917,14 @@ ipc.answerRenderer(
 		}
 
 		notification.show();
+
+		// Request window attention on Linux (Wayland-compatible)
+		if (is.linux && config.get('flashWindowOnMessage')) {
+			mainWindow.flashFrame(true);
+			setTimeout(() => {
+				mainWindow.flashFrame(false);
+			}, 2000);
+		}
 	},
 );
 

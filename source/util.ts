@@ -17,7 +17,7 @@ export function getWindow(): BrowserWindow {
 export function sendAction<T>(action: string, arguments_?: T): void {
 	const win = getWindow();
 
-	if (is.macos) {
+	if (is.macos || is.windows) {
 		win.restore();
 	}
 

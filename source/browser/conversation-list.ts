@@ -300,12 +300,12 @@ function countUnread(mutationsList: MutationRecord[]): void {
 		alreadyChecked.push(href);
 
 		// Get the icon data URI (set by createConversationList via createIcons).
-		const imgUrl = current.querySelector('img')?.dataset.caprineIcon;
+		const imgUrl = current.querySelector('img')?.dataset.caprineIcon ?? '';
 		const textOptions = current.querySelectorAll<HTMLElement>(selectors.conversationSidebarTextSelector);
 		const titleText = generateStringFromNode(textOptions[0]);
 		const bodyText = textOptions[1] ? generateStringFromNode(textOptions[1]) : undefined;
 
-		if (!titleText || !imgUrl) {
+		if (!titleText) {
 			continue;
 		}
 
