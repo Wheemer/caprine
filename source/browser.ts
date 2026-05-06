@@ -979,63 +979,49 @@ function filenameFromMimeType(mimeType: string): string {
 	return extension[base] ?? 'download';
 }
 
-// Handle links in chat area to open in OS default browser
-// Only intercepts links inside the main chat area [role="main"], allowing login
-// and other pages to function normally. Images open in-app modal.
-document.addEventListener('click', (event: MouseEvent) => {
-	const target = event.target as HTMLElement;
-
-	// Check if the clicked element is inside the main chat area
-	const mainElement = document.querySelector('[role="main"]');
-	if (!mainElement || !mainElement.contains(target)) {
-		return;
+function handleViewProfileClick(event: MouseEvent, target: HTMLElement): boolean {
+	const viewProfileItem = target.closest('[role="menuitem"]');
+	if (!viewProfileItem) {
+		return false;
 	}
 
-	// Only open external browser when on the messages page
-	// This ensures login, checkpoint, 2FA, and other Facebook pages work correctly within the app
-	const currentUrl = new URL(window.location.href);
-	const isFacebookDomain = currentUrl.hostname === 'www.facebook.com' || currentUrl.hostname === 'web.facebook.com';
-	const isMessagesPage = isFacebookDomain && currentUrl.pathname.startsWith('/messages');
-	const isLoginPage = isFacebookDomain && (
-		currentUrl.pathname.startsWith('/login')
-		|| currentUrl.pathname.startsWith('/checkpoint')
-		|| currentUrl.pathname.startsWith('/two_step_verification')
-		|| currentUrl.pathname.startsWith('/two_factor')
-		|| currentUrl.pathname === '/'
-	);
-
-	if (!isMessagesPage && !isLoginPage) {
-		return;
+	const menu = viewProfileItem.closest('[role="menu"]');
+	if (!menu || viewProfileItem.textContent?.trim() !== 'View profile') {
+		return false;
 	}
 
-	// Find if clicked element is within a link
+	event.preventDefault();
+	event.stopPropagation();
+	event.stopImmediatePropagation();
+
+	const href = viewProfileItem.getAttribute('href');
+	if (href) {
+		const profileUrl = href.startsWith('http') ? href : new URL(href, window.location.href).href;
+		ipc.callMain('open-external', profileUrl);
+	}
+
+	return true;
+}
+
+function handleLinkClick(event: MouseEvent, target: HTMLElement): boolean {
 	const link = target.closest<HTMLAnchorElement>('a[href]');
 	if (!link) {
-		return;
+		return false;
 	}
 
-	// Skip if user clicked directly on an image (allow modal view)
-	if (target.tagName === 'IMG') {
-		return;
-	}
-
-	// Get the href
 	const href = link.getAttribute('href');
 	if (!href) {
-		return;
+		return false;
 	}
 
-	// Skip anchor links
 	if (href.startsWith('#')) {
-		return;
+		return false;
 	}
 
-	// Skip JavaScript links
 	if (href.toLowerCase().startsWith('javascript')) {
-		return;
+		return false;
 	}
 
-	// Handle blob: URLs — download via IPC instead of opening externally
 	if (href.startsWith('blob:')) {
 		event.preventDefault();
 		event.stopPropagation();
@@ -1054,19 +1040,51 @@ document.addEventListener('click', (event: MouseEvent) => {
 			} catch {}
 		})();
 
-		return;
+		return true;
 	}
 
-	// Prevent default navigation
 	event.preventDefault();
 	event.stopPropagation();
 	event.stopImmediatePropagation();
 
-	// Construct full URL for relative links
 	const fullUrl = href.startsWith('http') ? href : new URL(href, window.location.href).href;
-
-	// Open in external browser
 	ipc.callMain('open-external', fullUrl);
+
+	return true;
+}
+
+document.addEventListener('click', (event: MouseEvent) => {
+	const target = event.target as HTMLElement;
+
+	if (handleViewProfileClick(event, target)) {
+		return;
+	}
+
+	const mainElement = document.querySelector('[role="main"]');
+	if (!mainElement || !mainElement.contains(target)) {
+		return;
+	}
+
+	const currentUrl = new URL(window.location.href);
+	const isFacebookDomain = currentUrl.hostname === 'www.facebook.com' || currentUrl.hostname === 'web.facebook.com';
+	const isMessagesPage = isFacebookDomain && currentUrl.pathname.startsWith('/messages');
+	const isLoginPage = isFacebookDomain && (
+		currentUrl.pathname.startsWith('/login')
+		|| currentUrl.pathname.startsWith('/checkpoint')
+		|| currentUrl.pathname.startsWith('/two_step_verification')
+		|| currentUrl.pathname.startsWith('/two_factor')
+		|| currentUrl.pathname === '/'
+	);
+
+	if (!isMessagesPage && !isLoginPage) {
+		return;
+	}
+
+	if (target.tagName === 'IMG') {
+		return;
+	}
+
+	handleLinkClick(event, target);
 }, {
 	capture: true,
 });
