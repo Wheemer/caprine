@@ -342,8 +342,8 @@ function countUnread(mutationsList: MutationRecord[]): void {
 // Required to prevent badge from clearing on temporary DOM changes
 let currentBadgeCount = 0;
 let consecutiveZeroCount = 0;
-const ZERO_CONFIRMATION_THRESHOLD = 3; // Require 3 consecutive zero readings before clearing badge
-const BADGE_POLL_INTERVAL_MS = 2000; // Poll every 2 seconds
+const ZERO_CONFIRMATION_THRESHOLD = 2; // Require 2 consecutive zero readings before clearing badge
+const BADGE_POLL_INTERVAL_MS = 1000; // Poll every 1 second
 
 function getUnreadCount(): number {
 	// Count unread conversations directly from the conversation grid.
