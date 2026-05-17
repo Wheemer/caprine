@@ -979,30 +979,6 @@ function filenameFromMimeType(mimeType: string): string {
 	return extension[base] ?? 'download';
 }
 
-function handleViewProfileClick(event: MouseEvent, target: HTMLElement): boolean {
-	const viewProfileItem = target.closest('[role="menuitem"]');
-	if (!viewProfileItem) {
-		return false;
-	}
-
-	const menu = viewProfileItem.closest('[role="menu"]');
-	if (!menu || viewProfileItem.textContent?.trim() !== 'View profile') {
-		return false;
-	}
-
-	event.preventDefault();
-	event.stopPropagation();
-	event.stopImmediatePropagation();
-
-	const href = viewProfileItem.getAttribute('href');
-	if (href) {
-		const profileUrl = href.startsWith('http') ? href : new URL(href, window.location.href).href;
-		ipc.callMain('open-external', profileUrl);
-	}
-
-	return true;
-}
-
 function handleLinkClick(event: MouseEvent, target: HTMLElement): boolean {
 	const link = target.closest<HTMLAnchorElement>('a[href]');
 	if (!link) {
@@ -1019,6 +995,13 @@ function handleLinkClick(event: MouseEvent, target: HTMLElement): boolean {
 	}
 
 	if (href.toLowerCase().startsWith('javascript')) {
+		return false;
+	}
+
+	const fullUrl = href.startsWith('http') ? href : new URL(href, window.location.href).href;
+	const url = new URL(fullUrl);
+
+	if (isInternalUrl(url)) {
 		return false;
 	}
 
@@ -1047,26 +1030,50 @@ function handleLinkClick(event: MouseEvent, target: HTMLElement): boolean {
 	event.stopPropagation();
 	event.stopImmediatePropagation();
 
-	const fullUrl = href.startsWith('http') ? href : new URL(href, window.location.href).href;
 	ipc.callMain('open-external', fullUrl);
 
 	return true;
 }
 
+function isInternalUrl(url: URL): boolean {
+	const isFacebookDomain = url.hostname.endsWith('.facebook.com') || url.hostname === 'www.facebook.com' || url.hostname === 'web.facebook.com';
+
+	if (!isFacebookDomain) {
+		return false;
+	}
+
+	if (url.pathname.startsWith('/messages')) {
+		return true;
+	}
+
+	if (url.pathname.startsWith('/login')) {
+		return true;
+	}
+
+	if (url.pathname.startsWith('/checkpoint')) {
+		return true;
+	}
+
+	if (url.pathname.startsWith('/two_step_verification')) {
+		return true;
+	}
+
+	if (url.pathname.startsWith('/two_factor')) {
+		return true;
+	}
+
+	if (url.pathname === '/' || url.pathname === '') {
+		return true;
+	}
+
+	return false;
+}
+
 document.addEventListener('click', (event: MouseEvent) => {
 	const target = event.target as HTMLElement;
 
-	if (handleViewProfileClick(event, target)) {
-		return;
-	}
-
-	const mainElement = document.querySelector('[role="main"]');
-	if (!mainElement || !mainElement.contains(target)) {
-		return;
-	}
-
 	const currentUrl = new URL(window.location.href);
-	const isFacebookDomain = currentUrl.hostname === 'www.facebook.com' || currentUrl.hostname === 'web.facebook.com';
+	const isFacebookDomain = currentUrl.hostname.endsWith('.facebook.com') || currentUrl.hostname === 'www.facebook.com' || currentUrl.hostname === 'web.facebook.com';
 	const isMessagesPage = isFacebookDomain && currentUrl.pathname.startsWith('/messages');
 	const isLoginPage = isFacebookDomain && (
 		currentUrl.pathname.startsWith('/login')
