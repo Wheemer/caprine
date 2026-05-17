@@ -330,15 +330,15 @@ ipc.answerMain('show-chats-view', async () => {
 });
 
 ipc.answerMain('show-requests-view', async () => {
-	await openSettingsMenuAndClickItem({svgPathPrefix: 'M95.5 219.208'});
+	await openSettingsMenuAndClickItem({svgPathPrefix: 'M8 .5'});
 });
 
 ipc.answerMain('show-archive-view', async () => {
-	await openSettingsMenuAndClickItem({svgPathPrefix: 'M109.5 207.75'});
+	await openSettingsMenuAndClickItem({svgPathPrefix: 'M8.75 10'});
 });
 
 ipc.answerMain('show-restricted-view', async () => {
-	await openSettingsMenuAndClickItem({svgPathPrefix: 'M92.75 262'});
+	await openSettingsMenuAndClickItem({svgPathPrefix: 'M2.89 16.3'});
 });
 
 ipc.answerMain('toggle-video-autoplay', () => {
@@ -602,21 +602,17 @@ async function jumpToConversation(key: number): Promise<void> {
 
 // Focus on the conversation with the given index
 async function selectConversation(index: number): Promise<void> {
-	const list = await elementReady(selectors.conversationList, {stopOnDomReady: false});
+	await elementReady(selectors.conversationList, {stopOnDomReady: false});
 
-	if (!list) {
-		console.error('Could not find conversations list', selectors.conversationList);
-		return;
-	}
-
-	const conversation = list.children[index];
+	const rows = document.querySelectorAll<HTMLElement>(`${selectors.conversationList} [role="row"]`);
+	const conversation = rows[index];
 
 	if (!conversation) {
 		console.error('Could not find conversation', index);
 		return;
 	}
 
-	conversation.querySelector<HTMLLegendElement>('[role=link]')!.click();
+	conversation.querySelector<HTMLElement>('[role="link"]')!.click();
 }
 
 function selectedConversationIndex(offset = 0): number {
@@ -626,9 +622,9 @@ function selectedConversationIndex(offset = 0): number {
 		return -1;
 	}
 
-	const newSelected = selected.closest(`${selectors.conversationList} > div`)!;
-
-	const list = [...newSelected.parentNode!.children];
+	const rows = document.querySelectorAll<HTMLElement>(`${selectors.conversationList} [role="row"]`);
+	const list = [...rows];
+	const newSelected = selected.closest<HTMLElement>('[role="row"]')!;
 	const index = list.indexOf(newSelected) + offset;
 
 	return ((index % list.length) + list.length) % list.length;

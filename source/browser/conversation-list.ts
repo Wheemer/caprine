@@ -163,7 +163,8 @@ function isUnreadConversation(element: HTMLElement): boolean {
 async function createConversationNewDesign(element: HTMLElement): Promise<Conversation> {
 	const conversation: Partial<Conversation> = {};
 
-	conversation.selected = Boolean(element.querySelector('[role=row] [role=link] > div:only-child'));
+	const link = element.querySelector('[role="link"]');
+	conversation.selected = Boolean(link?.getAttribute('aria-current') === 'page');
 	conversation.unread = isUnreadConversation(element);
 
 	let unparsedLabel: HTMLElement | undefined;
@@ -197,10 +198,7 @@ async function createConversationList(): Promise<Conversation[]> {
 		return [];
 	}
 
-	const elements: HTMLElement[] = [...list.children] as HTMLElement[];
-
-	// Remove last element from childer list
-	elements.splice(-1, 1);
+	const elements: HTMLElement[] = [...list.querySelectorAll<HTMLElement>('[role="row"]')];
 
 	const promises = elements.map(async element => {
 		const conversation = await createConversationNewDesign(element);
@@ -423,21 +421,21 @@ function setupFocusTriggers(): void {
 }
 
 window.addEventListener('load', async () => {
-	const sidebar = await elementReady('[role=navigation]:has([role=grid])', {stopOnDomReady: false});
+	const grid = await elementReady('[role="grid"]', {stopOnDomReady: false});
 
-	if (sidebar) {
+	if (grid) {
 		const conversationListObserver = new MutationObserver(async () => sendConversationList());
 		const conversationCountObserver = new MutationObserver(countUnread);
 		const trayIconObserver = new MutationObserver(updateTrayIcon);
 
-		conversationListObserver.observe(sidebar, {
+		conversationListObserver.observe(grid, {
 			subtree: true,
 			childList: true,
 			attributes: true,
 			attributeFilter: ['class'],
 		});
 
-		conversationCountObserver.observe(sidebar, {
+		conversationCountObserver.observe(grid, {
 			characterData: true,
 			subtree: true,
 			childList: true,
@@ -446,7 +444,7 @@ window.addEventListener('load', async () => {
 		});
 
 		// Watch for conversations being added/removed/reordered (badge count changes).
-		trayIconObserver.observe(sidebar, {
+		trayIconObserver.observe(grid, {
 			childList: true,
 			subtree: true,
 		});
