@@ -7,23 +7,25 @@ Elegant Facebook Messenger desktop app built with Electron.
 **Key paths:**
 - `source/` - Main TypeScript source code
 - `source/index.ts` - Electron main process entry point
-- `source/browser/` - Renderer process code
-- `css/` - Custom stylesheets (browser.css, dark-mode.css, etc.)
+- `source/browser/` - Renderer process utilities (conversation-list.ts, selectors.ts, etc.)
+- `css/` - Custom stylesheets (browser.css, dark-mode.css, scrollbar.css, autoplay.css, code-blocks.css, vibrancy.css, workchat.css)
 - `dist-js/` - TypeScript build output
 - `static/` - Assets (sounds, images)
 
 ## Build/Lint/Test Commands
 
-- **Install**: `npm install` (runs `patch-package` and `electron-builder install-app-deps`)
-- **Dev run**: `npm start` (compiles TS then runs Electron)
+- **Install**: `npm install` (runs postinstall: `patch-package && electron-builder install-app-deps`)
+- **Dev run**: `npm start` (runs `tsc && electron .`)
 - **Build**: `npm run build` (TypeScript only, outputs to `dist-js/`)
 - **Lint**: `npm run lint` (XO for TS/JS, stylelint for CSS)
-- **Type check**: `npm run test:tsc`
-- **Full test**: `npm run test` (typecheck + lint, no unit tests)
+- **Type check**: `npm run test:tsc` (runs `npm run build`, which compiles TypeScript)
+- **Full test**: `npm run test` (runs `npm run test:tsc && npm run lint`)
 - **Distribution**: `npm run dist:mac`, `npm run dist:linux`, `npm run dist:win`
-- **RPM builds**: `bash build-rpm.sh` (custom script, not electron-builder)
+- **RPM builds**: `npm run dist:rpm` or `bash build-rpm.sh` (requires dist artifacts, custom script not electron-builder)
 
-**CI runs:** tsc, xo, stylelint, rpmspec validation
+**CI runs:** tsc, xo, stylelint, rpmspec validation (Node.js 24)
+**Pre-push hook:** Runs `npm test` via Husky
+**Requirements:** Node.js >=16
 
 ## Code Style Guidelines
 
@@ -41,6 +43,7 @@ Elegant Facebook Messenger desktop app built with Electron.
 - `@typescript-eslint/no-loop-func` - Functions in loops allowed
 - `@typescript-eslint/no-non-null-assertion` - Non-null assertions (!) allowed
 - `@typescript-eslint/no-require-imports` - CommonJS require() allowed
+- `@typescript-eslint/no-var-requires` - `require()` for imports allowed
 - `@typescript-eslint/no-unsafe-*` - Many type safety checks disabled for flexibility
 - `import/extensions` - File extensions in imports allowed
 - `import/no-anonymous-default-export` - Anonymous default exports allowed
@@ -53,7 +56,7 @@ Elegant Facebook Messenger desktop app built with Electron.
 #### Conventions:
 - Use `const` for variables, `let` for reassignment, avoid `var`
 - Use double quotes for strings
-- Use 2-space indentation (configured inxo config)
+- Use tab indentation (configured in .editorconfig)
 - No trailing semicolons (XO default)
 - Use `camelCase` for functions/variables, `PascalCase` for types/classes
 - Use `ts-expect-error` for known type issues
@@ -62,7 +65,7 @@ Elegant Facebook Messenger desktop app built with Electron.
 ### CSS/Style (via Stylelint)
 
 - Extends `stylelint-config-xo`
-- Based on XO style guide (2-space indentation, double quotes)
+- Based on XO style guide (tab indentation per .editorconfig, double quotes)
 
 #### Disabled Rules:
 - `declaration-no-important` - `!important` allowed
@@ -90,7 +93,7 @@ Elegant Facebook Messenger desktop app built with Electron.
 
 - Functions/variables: `camelCase` (e.g., `sendAction`, `getWindow`, `toggleTrayIcon`)
 - Types/Interfaces: `PascalCase` with `I` prefix for interfaces (e.g., `IToggleSounds`)
-- Constants: `UPPER_SNAKE_CASE` (e.g., `messengerDomain`)
+- Constants: `camelCase` (e.g., `messengerDomain`, `caprineIconPath`)
 - Selectors: lowercase with hyphens (Facebook's naming)
 - File names: `camelCase` or `kebab-case`
 
@@ -104,3 +107,7 @@ Elegant Facebook Messenger desktop app built with Electron.
 ## Cursor/Copilot Rules
 
 No Cursor rules or Copilot instructions found in the repository.
+
+## Release Process
+
+- **Release**: `npm run release` (uses `np` without publishing)
