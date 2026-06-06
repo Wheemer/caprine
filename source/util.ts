@@ -18,7 +18,9 @@ export function sendAction<T>(action: string, arguments_?: T): void {
 	const win = getWindow();
 
 	if (is.macos || is.windows) {
-		win.restore();
+		if (win.isMinimized()) {
+			win.restore();
+		}
 	}
 
 	ipcMain.callRenderer(win, action, arguments_);
