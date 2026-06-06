@@ -583,7 +583,7 @@ async function nextConversation(): Promise<void> {
 	const index = selectedConversationIndex(1);
 
 	if (index !== -1) {
-		await selectConversation(index);
+		await selectConversation(index, 1);
 	}
 }
 
@@ -591,7 +591,7 @@ async function previousConversation(): Promise<void> {
 	const index = selectedConversationIndex(-1);
 
 	if (index !== -1) {
-		await selectConversation(index);
+		await selectConversation(index, -1);
 	}
 }
 
@@ -601,18 +601,37 @@ async function jumpToConversation(key: number): Promise<void> {
 }
 
 // Focus on the conversation with the given index
-async function selectConversation(index: number): Promise<void> {
+async function selectConversation(index: number, direction = 0): Promise<void> {
 	await elementReady(selectors.conversationList, {stopOnDomReady: false});
 
 	const rows = document.querySelectorAll<HTMLElement>(`${selectors.conversationList} [role="row"]`);
-	const conversation = rows[index];
+	const totalRows = rows.length;
 
-	if (!conversation) {
-		console.error('Could not find conversation', index);
+	if (totalRows === 0) {
 		return;
 	}
 
-	conversation.querySelector<HTMLElement>('[role="link"]')!.click();
+	let currentIndex = ((index % totalRows) + totalRows) % totalRows;
+
+	for (let attempt = 0; attempt < totalRows; attempt++) {
+		const conversation = rows[currentIndex];
+
+		if (conversation) {
+			const link = conversation.querySelector<HTMLElement>('[role="link"]');
+			if (link) {
+				link.click();
+				return;
+			}
+		}
+
+		// Skip non-link rows (e.g. ads, "show more") by advancing in the direction
+		if (direction === 0) {
+			break;
+		}
+
+		const wrappedIndex = (currentIndex + direction) % totalRows;
+		currentIndex = (wrappedIndex + totalRows) % totalRows;
+	}
 }
 
 function selectedConversationIndex(offset = 0): number {
@@ -1122,11 +1141,20 @@ document.addEventListener('keydown', async event => {
 		return;
 	}
 
+	if (event.key === 'Tab') {
+		event.preventDefault();
+		await (event.shiftKey ? previousConversation() : nextConversation());
+
+		return;
+	}
+
 	if (event.key === ']') {
+		event.preventDefault();
 		await nextConversation();
 	}
 
 	if (event.key === '[') {
+		event.preventDefault();
 		await previousConversation();
 	}
 
@@ -1152,7 +1180,7 @@ window.addEventListener('message', async ({data: {type, data}}) => {
 	}
 });
 
-function showNotification({id, title, body, icon, silent}: NotificationEvent): void {
+function showNotification({id, href, title, body, icon, silent}: NotificationEvent): void {
 	const image = new Image();
 	image.crossOrigin = 'anonymous';
 	image.src = icon;
@@ -1168,6 +1196,7 @@ function showNotification({id, title, body, icon, silent}: NotificationEvent): v
 
 		ipc.callMain('notification', {
 			id,
+			href,
 			title,
 			body,
 			icon: canvas.toDataURL(),
@@ -1218,8 +1247,16 @@ function insertMessageText(text: string, inputField: HTMLElement): void {
 	document.execCommand('insertText', false, text);
 }
 
-ipc.answerMain('notification-callback', (data: unknown) => {
+ipc.answerMain('notification-callback', async (data: any) => {
 	window.postMessage({type: 'notification-callback', data}, '*');
+
+	if (data.href) {
+		await elementReady(selectors.conversationList, {stopOnDomReady: false});
+		const link = document.querySelector<HTMLElement>(
+			`${selectors.conversationList} [role="row"] [role="link"][href="${data.href}"]`,
+		);
+		link?.click();
+	}
 });
 
 ipc.answerMain('notification-reply-callback', async (data: any) => {

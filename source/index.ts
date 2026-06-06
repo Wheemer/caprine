@@ -30,6 +30,7 @@ import tray from './tray';
 import {
 	sendAction,
 	sendBackgroundAction,
+	showAndFocusWindow,
 	messengerDomain,
 	stripTrackingFromUrl,
 } from './util';
@@ -118,11 +119,7 @@ if (!app.requestSingleInstanceLock()) {
 
 app.on('second-instance', () => {
 	if (mainWindow) {
-		if (mainWindow.isMinimized()) {
-			mainWindow.restore();
-		}
-
-		mainWindow.show();
+		showAndFocusWindow(mainWindow);
 	}
 });
 
@@ -850,10 +847,11 @@ if (is.linux) {
 }
 
 const notifications = new Map();
+const notificationHrefs = new Map<number, string>();
 
 ipc.answerRenderer(
 	'notification',
-	({id, title, body, icon, silent}: {id: number; title: string; body: string; icon: string; silent: boolean}) => {
+	({id, href, title, body, icon, silent}: {id: number; href?: string; title: string; body: string; icon: string; silent: boolean}) => {
 		// Don't send notifications when the window is focused
 		if (mainWindow.isFocused()) {
 			return;
@@ -863,6 +861,7 @@ ipc.answerRenderer(
 		if (notifications.has(id)) {
 			notifications.get(id).close();
 			notifications.delete(id);
+			notificationHrefs.delete(id);
 		}
 
 		// Skip notification if notifications are muted
@@ -879,23 +878,38 @@ ipc.answerRenderer(
 		});
 
 		notifications.set(id, notification);
+		if (href) {
+			notificationHrefs.set(id, href);
+		}
 
 		notification.on('click', () => {
-			sendAction('notification-callback', {callbackName: 'onclick', id});
+			showAndFocusWindow(mainWindow);
+			sendAction('notification-callback', {
+				callbackName: 'onclick',
+				id,
+				href: notificationHrefs.get(id),
+			});
 
 			notifications.delete(id);
+			notificationHrefs.delete(id);
 		});
 
 		notification.on('reply', (_event, reply: string) => {
-			// We use onclick event used by messenger to go to the right convo
-			sendBackgroundAction('notification-reply-callback', {callbackName: 'onclick', id, reply});
+			sendBackgroundAction('notification-reply-callback', {
+				callbackName: 'onclick',
+				id,
+				reply,
+				href: notificationHrefs.get(id),
+			});
 
 			notifications.delete(id);
+			notificationHrefs.delete(id);
 		});
 
 		notification.on('close', () => {
 			sendBackgroundAction('notification-callback', {callbackName: 'onclose', id});
 			notifications.delete(id);
+			notificationHrefs.delete(id);
 		});
 
 		if (!silent) {
