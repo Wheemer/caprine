@@ -17,10 +17,8 @@ export function getWindow(): BrowserWindow {
 export function sendAction<T>(action: string, arguments_?: T): void {
 	const win = getWindow();
 
-	if (is.macos || is.windows) {
-		if (win.isMinimized()) {
-			win.restore();
-		}
+	if ((is.macos || is.windows) && win.isMinimized()) {
+		win.restore();
 	}
 
 	ipcMain.callRenderer(win, action, arguments_);
