@@ -12,6 +12,7 @@ import {toggleMenuBarMode} from './menu-bar-mode';
 
 let tray: Tray | undefined;
 let previousMessageCount = 0;
+const trayDoubleClickDelayMilliseconds = 250;
 
 let contextMenu: Menu;
 
@@ -99,14 +100,29 @@ export default {
 
 		updateToolTip(0);
 
+		let trayClickTimeout: ReturnType<typeof setTimeout> | undefined;
+
 		const trayClickHandler = (): void => {
 			if (!win.isFullScreen()) {
 				toggleWindow();
 			}
 		};
 
-		tray.on('click', trayClickHandler);
-		tray.on('double-click', trayClickHandler);
+		tray.on('click', () => {
+			trayClickTimeout = setTimeout(() => {
+				trayClickTimeout = undefined;
+				trayClickHandler();
+			}, trayDoubleClickDelayMilliseconds);
+		});
+
+		tray.on('double-click', () => {
+			if (trayClickTimeout) {
+				clearTimeout(trayClickTimeout);
+				trayClickTimeout = undefined;
+			}
+
+			trayClickHandler();
+		});
 		tray.on('right-click', () => {
 			tray?.popUpContextMenu(contextMenu);
 		});
