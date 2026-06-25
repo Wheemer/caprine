@@ -681,15 +681,15 @@ Press Command/Ctrl+R in Caprine to see your changes.
 	const helpSubmenu: MenuItemConstructorOptions[] = [
 		openUrlMenuItem({
 			label: 'Website',
-			url: 'https://github.com/sindresorhus/caprine',
+			url: 'https://github.com/Wheemer/caprine',
 		}),
 		openUrlMenuItem({
 			label: 'Source Code',
-			url: 'https://github.com/sindresorhus/caprine',
+			url: 'https://github.com/Wheemer/caprine',
 		}),
 		openUrlMenuItem({
 			label: 'Donate…',
-			url: 'https://github.com/sindresorhus/caprine?sponsor=1',
+			url: 'https://github.com/Wheemer/caprine?sponsor=1',
 		}),
 		{
 			label: 'Report an Issue…',
@@ -703,7 +703,7 @@ Press Command/Ctrl+R in Caprine to see your changes.
 ${debugInfo()}`;
 
 				openNewGitHubIssue({
-					user: 'sindresorhus',
+					user: 'Wheemer',
 					repo: 'caprine',
 					body,
 				});
@@ -720,7 +720,7 @@ ${debugInfo()}`;
 				icon: caprineIconPath,
 				copyright: 'Created by Sindre Sorhus',
 				text: 'Maintainers:\nDušan Simić\nLefteris Garyfalakis\nMichael Quevillon\nNikolas Spiridakis',
-				website: 'https://github.com/sindresorhus/caprine',
+				website: 'https://github.com/Wheemer/caprine',
 			}),
 		);
 	}
