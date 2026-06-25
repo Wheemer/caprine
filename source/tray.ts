@@ -9,6 +9,7 @@ import {
 import {is} from 'electron-util';
 import config from './config';
 import {toggleMenuBarMode} from './menu-bar-mode';
+import {logDiagnostic} from './diagnostics';
 
 let tray: Tray | undefined;
 let previousMessageCount = 0;
@@ -18,10 +19,13 @@ let contextMenu: Menu;
 export default {
 	create(win: BrowserWindow) {
 		if (tray) {
+			logDiagnostic('tray.create.skipped-existing', {}, win);
 			return;
 		}
 
 		function toggleWindow(): void {
+			logDiagnostic('tray.toggle.before', {}, win);
+
 			if (win.isVisible()) {
 				win.hide();
 			} else {
@@ -37,6 +41,8 @@ export default {
 				const alwaysOnTopMenuItem = Menu.getApplicationMenu()!.getMenuItemById('always-on-top')!;
 				win.setAlwaysOnTop(alwaysOnTopMenuItem.checked);
 			}
+
+			logDiagnostic('tray.toggle.after', {}, win);
 		}
 
 		const macosMenuItems: MenuItemConstructorOptions[] = is.macos
@@ -94,29 +100,42 @@ export default {
 		]);
 
 		tray = new Tray(getIconPath(false));
+		logDiagnostic('tray.create.created', {}, win);
 
 		tray.setContextMenu(contextMenu);
 
 		updateToolTip(0);
 
 		const trayClickHandler = (): void => {
+			logDiagnostic('tray.click-handler', {}, win);
+
 			if (!win.isFullScreen()) {
 				toggleWindow();
 			}
 		};
 
-		tray.on('click', trayClickHandler);
-		tray.on('double-click', trayClickHandler);
+		tray.on('click', () => {
+			logDiagnostic('tray.event.click', {}, win);
+			trayClickHandler();
+		});
+		tray.on('double-click', () => {
+			logDiagnostic('tray.event.double-click', {}, win);
+			trayClickHandler();
+		});
 		tray.on('right-click', () => {
+			logDiagnostic('tray.event.right-click', {}, win);
 			tray?.popUpContextMenu(contextMenu);
 		});
 	},
 
 	destroy() {
+		logDiagnostic('tray.destroy.requested');
+
 		// Workaround for https://github.com/electron/electron/issues/14036
 		setTimeout(() => {
 			tray?.destroy();
 			tray = undefined;
+			logDiagnostic('tray.destroy.completed');
 		}, 500);
 	},
 

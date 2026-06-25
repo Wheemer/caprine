@@ -38,6 +38,7 @@ import {process as processEmojiUrl} from './emoji';
 import ensureOnline from './ensure-online';
 import {setUpMenuBarMode} from './menu-bar-mode';
 import {caprineIconPath} from './constants';
+import {logDiagnostic} from './diagnostics';
 
 ipc.setMaxListeners(100);
 
@@ -310,6 +311,11 @@ function setNotificationsMute(status: boolean): void {
 }
 
 function createMainWindow(): BrowserWindow {
+	logDiagnostic('main-window.create.start', {
+		launchMinimized: config.get('launchMinimized'),
+		wasOpenedAsHidden: app.getLoginItemSettings().wasOpenedAsHidden,
+	});
+
 	const lastWindowState = config.get('lastWindowState');
 
 	// Messenger or Work Chat
@@ -391,8 +397,14 @@ function createMainWindow(): BrowserWindow {
 	}
 
 	win.loadURL(mainURL);
+	logDiagnostic('main-window.load-url', {url: mainURL}, win);
 
 	win.on('close', event => {
+		logDiagnostic('window.event.close', {
+			isQuitting,
+			quitOnWindowClose: config.get('quitOnWindowClose'),
+		}, win);
+
 		if (config.get('quitOnWindowClose')) {
 			app.quit();
 			return;
@@ -422,11 +434,33 @@ function createMainWindow(): BrowserWindow {
 		}
 	});
 
+	win.on('show', () => {
+		logDiagnostic('window.event.show', {}, win);
+	});
+
+	win.on('hide', () => {
+		logDiagnostic('window.event.hide', {}, win);
+	});
+
 	win.on('focus', () => {
+		logDiagnostic('window.event.focus', {}, win);
+
 		if (config.get('flashWindowOnMessage')) {
 			// This is a security in the case where messageCount is not reset by page title update
 			win.flashFrame(false);
 		}
+	});
+
+	win.on('blur', () => {
+		logDiagnostic('window.event.blur', {}, win);
+	});
+
+	win.on('minimize', () => {
+		logDiagnostic('window.event.minimize', {}, win);
+	});
+
+	win.on('restore', () => {
+		logDiagnostic('window.event.restore', {}, win);
 	});
 
 	win.on('resize', () => {
@@ -446,6 +480,7 @@ function createMainWindow(): BrowserWindow {
 
 (async () => {
 	await Promise.all([ensureOnline(), app.whenReady()]);
+	logDiagnostic('app.ready');
 	await updateAppMenu();
 	mainWindow = createMainWindow();
 
@@ -605,6 +640,11 @@ function createMainWindow(): BrowserWindow {
 	const {webContents} = mainWindow;
 
 	webContents.on('dom-ready', async () => {
+		logDiagnostic('webcontents.event.dom-ready', {
+			launchMinimized: config.get('launchMinimized'),
+			wasOpenedAsHidden: app.getLoginItemSettings().wasOpenedAsHidden,
+		}, mainWindow);
+
 		// Set window title to Caprine (or with unread count if feature enabled)
 		updateTitlebar(previousMessageCount);
 
@@ -631,14 +671,18 @@ function createMainWindow(): BrowserWindow {
 		}
 
 		if (config.get('launchMinimized') || app.getLoginItemSettings().wasOpenedAsHidden) {
+			logDiagnostic('startup.path.launch-hidden.before-hide-create-tray', {}, mainWindow);
 			mainWindow.hide();
 			tray.create(mainWindow);
+			logDiagnostic('startup.path.launch-hidden.after-hide-create-tray', {}, mainWindow);
 		} else {
 			if (config.get('lastWindowState').isMaximized) {
 				mainWindow.maximize();
 			}
 
+			logDiagnostic('startup.path.show-window.before-show', {}, mainWindow);
 			mainWindow.show();
+			logDiagnostic('startup.path.show-window.after-show', {}, mainWindow);
 		}
 
 		if (is.macos) {
