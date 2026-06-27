@@ -5,14 +5,19 @@ import {
 	Tray,
 	BrowserWindow,
 	MenuItemConstructorOptions,
+	nativeImage,
 } from 'electron';
 import {is} from 'electron-util';
 import config from './config';
 import {toggleMenuBarMode} from './menu-bar-mode';
 import {logDiagnostic} from './diagnostics';
+import {markUserRequestedWindowOpen, wasWindowJustHiddenByBlur} from './startup-visibility';
 
 let tray: Tray | undefined;
 let previousMessageCount = 0;
+let previousIsOnline = true;
+let currentIconData: string | undefined;
+let previousBadgeState: boolean | undefined;
 
 let contextMenu: Menu;
 
@@ -23,23 +28,31 @@ export default {
 			return;
 		}
 
+		function showWindow(): void {
+			markUserRequestedWindowOpen();
+			win.show();
+
+			if (config.get('lastWindowState').isMaximized) {
+				win.maximize();
+				win.focus();
+			}
+
+			// Workaround for https://github.com/electron/electron/issues/20858
+			// `setAlwaysOnTop` stops working after hiding the window on KDE Plasma.
+			const alwaysOnTopMenuItem = Menu.getApplicationMenu()!.getMenuItemById('always-on-top')!;
+			win.setAlwaysOnTop(alwaysOnTopMenuItem.checked);
+			win.focus();
+		}
+
 		function toggleWindow(): void {
 			logDiagnostic('tray.toggle.before', {}, win);
 
 			if (win.isVisible()) {
 				win.hide();
+			} else if (wasWindowJustHiddenByBlur()) {
+				logDiagnostic('tray.toggle.skipped-after-blur-hide', {}, win);
 			} else {
-				if (config.get('lastWindowState').isMaximized) {
-					win.maximize();
-					win.focus();
-				} else {
-					win.show();
-				}
-
-				// Workaround for https://github.com/electron/electron/issues/20858
-				// `setAlwaysOnTop` stops working after hiding the window on KDE Plasma.
-				const alwaysOnTopMenuItem = Menu.getApplicationMenu()!.getMenuItemById('always-on-top')!;
-				win.setAlwaysOnTop(alwaysOnTopMenuItem.checked);
+				showWindow();
 			}
 
 			logDiagnostic('tray.toggle.after', {}, win);
@@ -120,7 +133,7 @@ export default {
 		});
 		tray.on('double-click', () => {
 			logDiagnostic('tray.event.double-click', {}, win);
-			trayClickHandler();
+			showWindow();
 		});
 		tray.on('right-click', () => {
 			logDiagnostic('tray.event.right-click', {}, win);
@@ -139,21 +152,24 @@ export default {
 		}, 500);
 	},
 
-	update(messageCount: number) {
+	update(messageCount: number, iconData?: string, isOnline = true) {
 		if (!tray) {
 			return;
 		}
 
-		const shouldShowUnread = messageCount > 0;
+		const shouldShowUnread = isOnline && messageCount > 0;
+		const stateUnchanged = isOnline === previousIsOnline && messageCount === previousMessageCount;
 
 		const currentHasUnread = previousMessageCount > 0;
-		if (shouldShowUnread === currentHasUnread && messageCount === previousMessageCount) {
+		if (shouldShowUnread === currentHasUnread && stateUnchanged) {
 			return;
 		}
 
 		previousMessageCount = messageCount;
-		tray.setImage(getIconPath(shouldShowUnread));
-		updateToolTip(messageCount);
+		previousIsOnline = isOnline;
+		currentIconData = iconData;
+		setTrayImage(iconData, shouldShowUnread, isOnline);
+		updateToolTip(messageCount, isOnline);
 	},
 
 	setBadge(shouldDisplayUnread: boolean) {
@@ -161,16 +177,34 @@ export default {
 			return;
 		}
 
-		tray.setImage(getIconPath(shouldDisplayUnread));
+		if (currentIconData !== undefined || shouldDisplayUnread === previousBadgeState) {
+			return;
+		}
+
+		previousBadgeState = shouldDisplayUnread;
+		tray.setImage(getIconPath(shouldDisplayUnread, true));
 	},
 };
 
-function updateToolTip(counter: number): void {
+function setTrayImage(iconData: string | undefined, hasUnreadMessages: boolean, isOnline: boolean): void {
+	if (!tray) {
+		return;
+	}
+
+	tray.setImage(iconData ? nativeImage.createFromDataURL(iconData) : getIconPath(hasUnreadMessages, isOnline));
+}
+
+function updateToolTip(counter: number, isOnline = true): void {
 	if (!tray) {
 		return;
 	}
 
 	let tooltip = app.name;
+
+	if (!isOnline) {
+		tray.setToolTip(`${tooltip} - Offline`);
+		return;
+	}
 
 	if (counter > 0) {
 		tooltip += `- ${counter} unread ${counter === 1 ? 'message' : 'messages'}`;
@@ -179,15 +213,19 @@ function updateToolTip(counter: number): void {
 	tray.setToolTip(tooltip);
 }
 
-function getIconPath(hasUnreadMessages: boolean): string {
+function getIconPath(hasUnreadMessages: boolean, isOnline = true): string {
 	const icon = is.macos
 		? getMacOSIconName(hasUnreadMessages)
-		: getNonMacOSIconName(hasUnreadMessages);
+		: getNonMacOSIconName(hasUnreadMessages, isOnline);
 
 	return path.join(__dirname, '..', `static/${icon}`);
 }
 
-function getNonMacOSIconName(hasUnreadMessages: boolean): string {
+function getNonMacOSIconName(hasUnreadMessages: boolean, isOnline: boolean): string {
+	if (!isOnline) {
+		return 'IconTrayOffline.png';
+	}
+
 	return hasUnreadMessages ? 'IconTrayUnread.png' : 'IconTray.png';
 }
 

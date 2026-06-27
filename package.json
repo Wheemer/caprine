@@ -1,15 +1,20 @@
 {
 	"name": "caprine",
 	"productName": "Caprine",
-	"version": "2.61.24",
-	"description": "Elegant Facebook Messenger desktop app",
+	"version": "2.61.26",
+	"description": "Focused Facebook Messenger desktop app for Windows",
 	"license": "MIT",
 	"repository": "Wheemer/caprine",
 	"author": {
-		"name": "Sindre Sorhus",
-		"email": "sindresorhus@gmail.com",
-		"url": "https://sindresorhus.com"
+		"name": "Wheemer",
+		"url": "https://github.com/Wheemer"
 	},
+	"contributors": [
+		{
+			"name": "Sindre Sorhus",
+			"url": "https://sindresorhus.com"
+		}
+	],
 	"main": "dist-js",
 	"engines": {
 		"node": ">=16"
@@ -23,10 +28,6 @@
 		"test": "npm run test:tsc && npm run lint",
 		"start": "tsc && electron .",
 		"build": "tsc",
-		"dist:linux": "electron-builder --linux",
-		"dist:rpm": "bash build-rpm.sh",
-		"dist:pacman": "bash build-pacman.sh",
-		"dist:mac": "electron-builder --mac",
 		"dist:win": "electron-builder --win",
 		"release": "np --no-publish"
 	},
@@ -117,90 +118,15 @@
 			"static/Icon.png",
 			"static/sounds/**/*"
 		],
-		"appId": "com.sindresorhus.caprine",
-		"mac": {
-			"category": "public.app-category.social-networking",
-			"icon": "build/icon.icns",
-			"electronUpdaterCompatibility": ">=4.5.2",
-			"darkModeSupport": true,
-			"target": {
-				"target": "default",
-				"arch": [
-					"x64",
-					"arm64"
-				]
-			},
-			"extendInfo": {
-				"LSUIElement": 1,
-				"NSCameraUsageDescription": "Caprine needs access to your camera.",
-				"NSMicrophoneUsageDescription": "Caprine needs access to your microphone."
-			}
-		},
-		"dmg": {
-			"iconSize": 160,
-			"contents": [
-				{
-					"x": 180,
-					"y": 170
-				},
-				{
-					"x": 480,
-					"y": 170,
-					"type": "link",
-					"path": "/Applications"
-				}
-			]
-		},
-		"linux": {
-			"target": [
-				{
-					"target": "AppImage",
-					"arch": [
-						"x64",
-						"arm64"
-					]
-				},
-				{
-					"target": "deb",
-					"arch": [
-						"x64",
-						"arm64"
-					]
-				}
-			],
-			"icon": "build/icons/",
-			"synopsis": "Elegant Facebook Messenger desktop app",
-			"description": "Caprine is an unofficial and privacy focused Facebook Messenger desktop app with many useful features.",
-			"category": "Network;Chat",
-			"artifactName": "${productName}-${version}-${arch}.${ext}"
-		},
-		"snap": {
-			"plugs": [
-				"default",
-				"camera",
-				"removable-media"
-			],
-			"publish": [
-				{
-					"provider": "github"
-				},
-				{
-					"provider": "snapStore",
-					"channels": [
-						"stable"
-					]
-				}
-			]
-		},
+		"appId": "com.wheemer.caprine",
 		"win": {
 			"verifyUpdateCodeSignature": false,
-			"icon": "build/icon.png",
+			"icon": "build/icon.ico",
 			"target": [
 				{
 					"target": "nsis",
 					"arch": [
-						"x64",
-						"arm64"
+						"x64"
 					]
 				}
 			]
@@ -209,6 +135,7 @@
 			"oneClick": false,
 			"perMachine": false,
 			"allowToChangeInstallationDirectory": true,
+			"include": "build/installer.nsh",
 			"artifactName": "${productName}-${version}-${arch}.${ext}"
 		}
 	},

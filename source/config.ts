@@ -19,6 +19,9 @@ export type StoreType = {
 	menuBarMode: boolean;
 	showDockIcon: boolean;
 	showTrayIcon: boolean;
+	showTaskbarIcon: boolean;
+	hideWindowOnMinimize: boolean;
+	hideWindowOnBlur: boolean;
 	alwaysOnTop: boolean;
 	showAlwaysOnTopPrompt: boolean;
 	bounceDockOnMessage: boolean;
@@ -116,6 +119,18 @@ const schema: Store.Schema<StoreType> = {
 	showTrayIcon: {
 		type: 'boolean',
 		default: true,
+	},
+	showTaskbarIcon: {
+		type: 'boolean',
+		default: true,
+	},
+	hideWindowOnMinimize: {
+		type: 'boolean',
+		default: false,
+	},
+	hideWindowOnBlur: {
+		type: 'boolean',
+		default: false,
 	},
 	alwaysOnTop: {
 		type: 'boolean',

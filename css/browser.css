@@ -44,13 +44,24 @@ body {
 	outline: none !important;
 }
 
-[role='navigation'] a {
-	cursor: default !important;
-}
-
 /* Remove top Facebook cookie banner */
 .fbPageBanner {
 	display: none !important;
+}
+
+a[href],
+button,
+[role='button'],
+[role='link'],
+[tabindex='0'] {
+	cursor: pointer !important;
+}
+
+input,
+textarea,
+[contenteditable='true'],
+[role='textbox'] {
+	cursor: text !important;
 }
 
 /* Hide Facebook top navigation bar (not present on messenger.com) */
@@ -119,6 +130,27 @@ body {
 /* Hide disabled scrollbar on the right side */
 body::-webkit-scrollbar {
 	display: none;
+}
+
+.caprine-hidden-skip-link {
+	display: none !important;
+}
+
+.caprine-sidebar-brand {
+	position: relative !important;
+	display: inline-block !important;
+	padding-left: 42px !important;
+}
+
+.caprine-sidebar-brand-icon {
+	position: absolute !important;
+	top: calc(50% + 2px) !important;
+	left: 6px !important;
+	width: 26px !important;
+	height: 26px !important;
+	border-radius: 6px !important;
+	object-fit: cover !important;
+	transform: translateY(-50%) !important;
 }
 
 /* A utility class for temporarily hiding all dropdown menus */

@@ -14,10 +14,6 @@ const padding = {
 	left: 0,
 };
 
-// Track last notified content per conversation to prevent DOM mutation repeats
-// New messages with different content will still notify immediately
-const lastNotifiedContent = new Map<string, string>();
-
 function drawIcon(size: number, img?: HTMLImageElement): HTMLCanvasElement {
 	const canvas = document.createElement('canvas');
 
@@ -163,9 +159,11 @@ function isUnreadConversation(element: HTMLElement): boolean {
 async function createConversationNewDesign(element: HTMLElement): Promise<Conversation> {
 	const conversation: Partial<Conversation> = {};
 
-	const link = element.querySelector('[role="link"]');
+	const link = element.querySelector<HTMLElement>('[role="link"]');
 	conversation.selected = Boolean(link?.getAttribute('aria-current') === 'page');
+	conversation.href = link?.getAttribute('href') ?? undefined;
 	conversation.unread = isUnreadConversation(element);
+	const textOptions = element.querySelectorAll<HTMLElement>(selectors.conversationSidebarTextSelector);
 
 	let unparsedLabel: HTMLElement | undefined;
 	for (const selector of selectors.conversationLabelSelectors) {
@@ -178,7 +176,8 @@ async function createConversationNewDesign(element: HTMLElement): Promise<Conver
 		}
 	}
 
-	conversation.label = await getLabel(unparsedLabel);
+	conversation.label = cleanSidebarText(textOptions[0] ? generateStringFromNode(textOptions[0]) : undefined) ?? await getLabel(unparsedLabel);
+	conversation.body = cleanSidebarText(textOptions[1] ? generateStringFromNode(textOptions[1]) : undefined);
 
 	const iconElement = element.querySelector<HTMLElement>('img')!;
 	conversation.icon = await getIcon(iconElement, conversation.unread);
@@ -233,106 +232,34 @@ function generateStringFromNode(element: Element): string | undefined {
 	return cloneElement.textContent ?? undefined;
 }
 
-function countUnread(mutationsList: MutationRecord[]): void {
-	const alreadyChecked: string[] = [];
+function cleanSidebarText(text: string | undefined): string | undefined {
+	const cleaned = text?.replaceAll(/\s+/g, ' ').trim();
+	return cleaned === '' ? undefined : cleaned;
+}
 
-	// Check latest mutation first
-	for (const mutation of mutationsList.reverse()) {
-		// Find the conversation row containing this mutation.
-		// For childList mutations the target is the parent element; for others it's the
-		// element/text node itself, so go up one level first.
-		const target = mutation.type === 'childList'
-			? (mutation.target as Element)
-			: (mutation.target.parentElement as Element);
-
-		if (!target) {
-			continue;
-		}
-
-		// Walk up to the nearest [role=row] (a single conversation entry in the grid).
-		let current = target.closest<HTMLElement>(selectors.conversationSidebarSelector);
-
-		// When a whole row is added (conversation moves to top of list), the target
-		// is the grid container. Check addedNodes for a [role=row] directly.
-		if (!current && mutation.type === 'childList') {
-			for (const node of mutation.addedNodes) {
-				const element = node as Element;
-				if (element.matches?.(selectors.conversationSidebarSelector)) {
-					current = element as HTMLElement;
-					break;
-				}
-			}
-		}
-
-		if (!current) {
-			continue;
-		}
-
-		// Make sure this row is inside the chats grid (not some other [role=row] on the page).
-		if (!current.closest('[role=grid]')) {
-			continue;
-		}
-
-		const href = current.querySelector('[role="link"]')?.getAttribute('href');
-
-		if (!href) {
-			continue;
-		}
-
-		// Deduplicate: only process each conversation once per batch of mutations.
-		if (alreadyChecked.includes(href)) {
-			continue;
-		}
-
-		// Only notify for unread conversations.
-		if (!isUnreadConversation(current)) {
-			continue;
-		}
-
-		// Skip notifications for muted conversations (exclude from popup/badge/sound)
-		const isMuted = Boolean(current.querySelector(selectors.mutedConversation));
-		if (isMuted) {
-			continue;
-		}
-
-		alreadyChecked.push(href);
-
-		// Get the icon data URI (set by createConversationList via createIcons).
-		const imgUrl = current.querySelector('img')?.dataset.caprineIcon ?? '';
-		const textOptions = current.querySelectorAll<HTMLElement>(selectors.conversationSidebarTextSelector);
-		const titleText = generateStringFromNode(textOptions[0]);
-		const bodyText = textOptions[1] ? generateStringFromNode(textOptions[1]) : undefined;
-
-		if (!titleText) {
-			continue;
-		}
-
-		// Generate conversation ID for notification tracking
-		const conversationId = [...href].reduce((hash, char) => ((hash * 31) + char.codePointAt(0)!) % 2_147_483_647, 0);
-
-		// Track last notified content per conversation to prevent DOM mutation repeats
-		// New messages with different content will still notify immediately
-		const currentContent = bodyText ?? '';
-		const lastContent = lastNotifiedContent.get(href);
-
-		// Only skip if content is exactly the same (DOM mutation duplicate)
-		if (lastContent === currentContent) {
-			continue;
-		}
-
-		// Track this conversation's latest content
-		lastNotifiedContent.set(href, currentContent);
-
-		// Send a notification
-		ipc.callMain('notification', {
-			id: conversationId,
-			href,
-			title: titleText,
-			body: bodyText ?? 'New message',
-			icon: imgUrl,
-			silent: false,
-		});
+function isOutgoingMessagePreview(text: string | undefined): boolean {
+	if (!text) {
+		return false;
 	}
+
+	const normalizedText = text.trim().replaceAll(/\s+/g, ' ').toLowerCase();
+
+	return /^(?:you:|you sent\b|you replied\b|you forwarded\b|you reacted\b)/.test(normalizedText);
+}
+
+function shouldIgnoreUnreadConversation(row: HTMLElement): boolean {
+	if (!isUnreadConversation(row)) {
+		return true;
+	}
+
+	if (row.querySelector(selectors.mutedConversation)) {
+		return true;
+	}
+
+	const textOptions = row.querySelectorAll<HTMLElement>(selectors.conversationSidebarTextSelector);
+	const bodyText = textOptions[1] ? generateStringFromNode(textOptions[1]) : undefined;
+
+	return isOutgoingMessagePreview(bodyText);
 }
 
 // Track unread count state for badge persistence
@@ -341,6 +268,11 @@ function countUnread(mutationsList: MutationRecord[]): void {
 // Required to prevent badge from clearing on temporary DOM changes
 let currentBadgeCount = 0;
 let consecutiveZeroCount = 0;
+let unreadNotificationPrimed = false;
+let unreadNotificationScanRunning = false;
+let unreadNotificationScanPending = false;
+let notificationId = 100_000;
+const unreadNotificationSignatures = new Map<string, string>();
 const ZERO_CONFIRMATION_THRESHOLD = 2; // Require 2 consecutive zero readings before clearing badge
 const BADGE_POLL_INTERVAL_MS = 1000; // Poll every 1 second
 
@@ -349,23 +281,83 @@ function getUnreadCount(): number {
 	// facebook.com/messages only shows the last message body in the sidebar —
 	// there is no per-conversation unread message count exposed in the DOM.
 	// The badge therefore reflects the number of conversations with unread messages.
-	const rows = document.querySelectorAll<HTMLElement>('[role=grid] [role=row]');
+	const rows = document.querySelectorAll<HTMLElement>(`${selectors.conversationList} [role=row]`);
 	let count = 0;
 
 	for (const row of rows) {
-		if (isUnreadConversation(row)) {
-			// Skip muted conversations from badge count
-			const isMuted = Boolean(row.querySelector(selectors.mutedConversation));
-
-			if (isMuted) {
-				continue;
-			}
-
+		if (!shouldIgnoreUnreadConversation(row)) {
 			count++;
 		}
 	}
 
 	return count;
+}
+
+function notificationKey(conversation: Conversation): string {
+	return conversation.href ?? conversation.label;
+}
+
+function notificationSignature(conversation: Conversation): string {
+	return conversation.body ?? conversation.label;
+}
+
+async function notifyUnreadConversations(): Promise<void> {
+	if (unreadNotificationScanRunning) {
+		unreadNotificationScanPending = true;
+		return;
+	}
+
+	unreadNotificationScanRunning = true;
+
+	try {
+		const rows = [...document.querySelectorAll<HTMLElement>(`${selectors.conversationList} [role=row]`)]
+			.filter(row => !shouldIgnoreUnreadConversation(row));
+		const conversations = await Promise.all(rows.map(async row => createConversationNewDesign(row)));
+		const currentUnreadKeys = new Set<string>();
+
+		for (const conversation of conversations) {
+			if (!conversation.label) {
+				continue;
+			}
+
+			const key = notificationKey(conversation);
+			const signature = notificationSignature(conversation);
+			currentUnreadKeys.add(key);
+
+			if (unreadNotificationSignatures.get(key) === signature) {
+				continue;
+			}
+
+			unreadNotificationSignatures.set(key, signature);
+
+			if (!unreadNotificationPrimed) {
+				continue;
+			}
+
+			void ipc.callMain('notification', {
+				id: notificationId++,
+				href: conversation.href,
+				title: conversation.label,
+				body: conversation.body ?? 'New message',
+				icon: conversation.icon,
+				silent: false,
+			});
+		}
+
+		for (const key of unreadNotificationSignatures.keys()) {
+			if (!currentUnreadKeys.has(key)) {
+				unreadNotificationSignatures.delete(key);
+			}
+		}
+
+		unreadNotificationPrimed = true;
+	} finally {
+		unreadNotificationScanRunning = false;
+		if (unreadNotificationScanPending) {
+			unreadNotificationScanPending = false;
+			void notifyUnreadConversations();
+		}
+	}
 }
 
 function updateTrayIcon(): void {
@@ -388,13 +380,16 @@ function updateTrayIcon(): void {
 		if (consecutiveZeroCount >= ZERO_CONFIRMATION_THRESHOLD) {
 			currentBadgeCount = 0;
 			consecutiveZeroCount = 0;
-			lastNotifiedContent.clear();
 		}
 		// If not enough consecutive zeros, keep showing the current badge count
 	}
 
-	ipc.callMain('update-tray-icon', currentBadgeCount);
+	ipc.callMain('update-tray-icon', {
+		messageCount: currentBadgeCount,
+		isOnline: navigator.onLine,
+	});
 	ipc.callMain('update-titlebar-count', currentBadgeCount);
+	void notifyUnreadConversations();
 }
 
 // Poll for badge updates to ensure it stays in sync
@@ -421,12 +416,19 @@ function setupFocusTriggers(): void {
 	});
 }
 
+window.addEventListener('online', () => {
+	updateTrayIcon();
+});
+
+window.addEventListener('offline', () => {
+	updateTrayIcon();
+});
+
 window.addEventListener('load', async () => {
-	const grid = await elementReady('[role="grid"]', {stopOnDomReady: false});
+	const grid = await elementReady(selectors.conversationList, {stopOnDomReady: false});
 
 	if (grid) {
 		const conversationListObserver = new MutationObserver(async () => sendConversationList());
-		const conversationCountObserver = new MutationObserver(countUnread);
 		const trayIconObserver = new MutationObserver(updateTrayIcon);
 
 		conversationListObserver.observe(grid, {
@@ -434,14 +436,6 @@ window.addEventListener('load', async () => {
 			childList: true,
 			attributes: true,
 			attributeFilter: ['class'],
-		});
-
-		conversationCountObserver.observe(grid, {
-			characterData: true,
-			subtree: true,
-			childList: true,
-			attributes: true,
-			attributeFilter: ['src', 'alt'],
 		});
 
 		// Watch for conversations being added/removed/reordered (badge count changes).

@@ -1,129 +1,50 @@
 name: Build and publish
+
 on:
   push:
     tags:
-      - '*'
+      - 'v*'
   workflow_dispatch:
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CSC_IDENTITY_AUTO_DISCOVERY: false
+
 jobs:
   tests:
     uses: ./.github/workflows/tests.yml
-  build:
+
+  build-windows:
     needs: [tests]
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - macos-latest
-          - ubuntu-latest
-          - windows-latest
+    runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
+
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
           node-version: 24
-          cache: 'npm'
+          cache: npm
+
       - name: Install dependencies
         run: npm ci
+
       - name: Build Caprine
         run: npm run build
-      - name: Cleanup tag
-        id: release_tag
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const tag = context.ref_name || context.payload.ref.replace('refs/tags/', '');
-            core.setOutput('value', tag.replace(/^v/, ''));
+
+      - name: Package Windows installer
+        run: npm run dist:win -- --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Ensure GitHub Release exists
         run: gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --generate-notes --repo "${{ github.repository }}" || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install Snapcraft
-        uses: samuelmeuli/action-snapcraft@v1
-        if: startsWith(matrix.os, 'ubuntu')
-      - name: Package Caprine for macOS
-        if: startsWith(matrix.os, 'macos')
-        run: |
-          if [ -n "${{ secrets.CSC_LINK }}" ]; then
-            export CSC_LINK="${{ secrets.CSC_LINK }}"
-            export CSC_KEY_PASSWORD="${{ secrets.CSC_KEY_PASSWORD }}"
-          else
-            export CSC_IDENTITY_AUTO_DISCOVERY=false
-          fi
-          npm run dist:mac -- --publish never
+
+      - name: Upload Windows release artifacts
+        run: gh release upload "${{ github.ref_name }}" dist/Caprine-*-x64.exe dist/Caprine-*-x64.exe.blockmap dist/latest.yml --clobber --repo "${{ github.repository }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Upload macOS artifacts to GitHub Release
-        if: startsWith(matrix.os, 'macos')
-        run: gh release upload "${{ github.ref_name }}" dist/*.dmg dist/*.zip --clobber --repo "${{ github.repository }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Package Caprine for Windows
-        if: startsWith(matrix.os, 'windows')
-        run: npm run dist:win -- --publish never
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Upload Windows artifacts to GitHub Release
-        if: startsWith(matrix.os, 'windows')
-        run: gh release upload "${{ github.ref_name }}" dist/*.exe --clobber --repo "${{ github.repository }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Package Caprine for Linux
-        if: startsWith(matrix.os, 'ubuntu')
-        run: npm run dist:linux -- --publish never
-        env:
-          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.snapcraft_token }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Upload Linux artifacts to GitHub Release
-        if: startsWith(matrix.os, 'ubuntu')
-        run: gh release upload "${{ github.ref_name }}" dist/*.AppImage dist/*.deb --clobber --repo "${{ github.repository }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build RPM packages (x86_64 and arm64)
-        if: startsWith(matrix.os, 'ubuntu')
-        run: |
-          bash build-rpm.sh
-      - name: Upload RPM packages to GitHub Releases
-        if: startsWith(matrix.os, 'ubuntu')
-        run: gh release upload "${{ github.ref_name }}" dist/*.rpm --clobber --repo "${{ github.repository }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build Pacman packages (x86_64 and aarch64)
-        if: startsWith(matrix.os, 'ubuntu')
-        run: |
-          # Build pacman packages in Arch Linux container
-          docker run --rm -v "${{ github.workspace }}":/caprine archlinux:base-devel bash -c '
-            pacman -Sy --noconfirm base-devel nodejs npm git rsync sudo
-            useradd -m -s /bin/bash builder
-            echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-            chown -R builder:builder /caprine
-            su - builder -c "cd /caprine && bash build-pacman.sh"
-          '
-          
-          # Fix permissions on built packages
-          sudo chown -R runner:runner dist/
-      - name: Upload Pacman packages to GitHub Releases
-        if: startsWith(matrix.os, 'ubuntu')
-        run: gh release upload "${{ github.ref_name }}" dist/*.pkg.tar.zst --clobber --repo "${{ github.repository }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Upload x64 deb to Gemfury
-        if: startsWith(matrix.os, 'ubuntu')
-        run: |
-          deb_file=$(ls dist/Caprine-*-amd64.deb 2>/dev/null | head -1)
-          if [ -z "$deb_file" ]; then
-            echo "Error: No amd64 deb file found"
-            exit 1
-          fi
-          curl -F package=@$deb_file https://${{ secrets.gemfury_token }}@push.fury.io/wdis/
-      - name: Upload ARM64 deb to Gemfury
-        if: startsWith(matrix.os, 'ubuntu')
-        run: |
-          deb_file=$(ls dist/Caprine-*-arm64.deb 2>/dev/null | head -1)
-          if [ -z "$deb_file" ]; then
-            echo "Error: No arm64 deb file found"
-            exit 1
-          fi
-          curl -F package=@$deb_file https://${{ secrets.gemfury_token }}@push.fury.io/wdis/

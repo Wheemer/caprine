@@ -35,8 +35,7 @@ export function logDiagnostic(event: string, details: Record<string, unknown> = 
 	try {
 		mkdirSync(logDirectory, {recursive: true});
 		appendFileSync(logPath, line + '\n');
-		console.log('[caprine-diagnostics]', line);
-	} catch (error) {
-		console.error('[caprine-diagnostics] failed to write log', error);
+	} catch {
+		// Diagnostics should never interrupt the app.
 	}
 }

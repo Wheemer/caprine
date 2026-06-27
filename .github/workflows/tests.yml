@@ -61,11 +61,3 @@ jobs:
         run: |
           npm ci
           npm run lint:stylelint
-  rpmspec:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Lint rpm spec file
-        uses: EyeCantCU/rpmlint-action@v0.1.1
-        with:
-          rpmfiles: packages/rpm/caprine.spec

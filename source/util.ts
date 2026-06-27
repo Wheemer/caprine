@@ -42,10 +42,26 @@ export function showAndFocusWindow(win: BrowserWindow): void {
 	}
 
 	if (is.windows) {
+		win.show();
 		win.setAlwaysOnTop(true);
-		win.setAlwaysOnTop(false);
+		win.moveTop();
+		win.focus();
+		app.focus();
+
+		setTimeout(() => {
+			if (win.isDestroyed()) {
+				return;
+			}
+
+			win.setAlwaysOnTop(config.get('alwaysOnTop'));
+			win.focus();
+			app.focus();
+		}, 100);
+
+		return;
 	}
 
+	app.focus({steal: true});
 	win.focus();
 }
 
@@ -92,9 +108,26 @@ export const toggleTrayIcon = (): void => {
 	}
 };
 
+export const setTaskbarIconVisibility = (visible: boolean): void => {
+	config.set('showTaskbarIcon', visible);
+	getWindow().setSkipTaskbar(!visible);
+
+	if (!visible && !config.get('showTrayIcon')) {
+		toggleTrayIcon();
+	}
+};
+
 export const toggleLaunchMinimized = (menu: Menu): void => {
 	config.set('launchMinimized', !config.get('launchMinimized'));
+	const loginItemSettings = app.getLoginItemSettings();
 	const showTrayIconItem = menu.getMenuItemById('showTrayIcon')!;
+
+	if (loginItemSettings.openAtLogin) {
+		app.setLoginItemSettings({
+			openAtLogin: true,
+			openAsHidden: config.get('launchMinimized'),
+		});
+	}
 
 	if (config.get('launchMinimized')) {
 		if (!config.get('showTrayIcon')) {
@@ -102,14 +135,38 @@ export const toggleLaunchMinimized = (menu: Menu): void => {
 		}
 
 		disableMenuItem(showTrayIconItem, true);
-
-		dialog.showMessageBox({
-			type: 'info',
-			message: 'The “Show Tray Icon” setting is force-enabled while the “Launch Minimized” setting is enabled.',
-			buttons: ['OK'],
-		});
 	} else {
-		showTrayIconItem.enabled = true;
+		showTrayIconItem.enabled = !config.get('hideWindowOnMinimize') && !config.get('hideWindowOnBlur');
+	}
+};
+
+export const toggleHideWindowOnMinimize = (menu: Menu): void => {
+	config.set('hideWindowOnMinimize', !config.get('hideWindowOnMinimize'));
+	const showTrayIconItem = menu.getMenuItemById('showTrayIcon')!;
+
+	if (config.get('hideWindowOnMinimize')) {
+		if (!config.get('showTrayIcon')) {
+			toggleTrayIcon();
+		}
+
+		disableMenuItem(showTrayIconItem, true);
+	} else {
+		showTrayIconItem.enabled = !config.get('launchMinimized') && !config.get('hideWindowOnBlur');
+	}
+};
+
+export const toggleHideWindowOnBlur = (menu: Menu): void => {
+	config.set('hideWindowOnBlur', !config.get('hideWindowOnBlur'));
+	const showTrayIconItem = menu.getMenuItemById('showTrayIcon')!;
+
+	if (config.get('hideWindowOnBlur')) {
+		if (!config.get('showTrayIcon')) {
+			toggleTrayIcon();
+		}
+
+		disableMenuItem(showTrayIconItem, true);
+	} else {
+		showTrayIconItem.enabled = !config.get('launchMinimized') && !config.get('hideWindowOnMinimize');
 	}
 };
 

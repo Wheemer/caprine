@@ -24,6 +24,9 @@ import {
 	getWindow,
 	toggleTrayIcon,
 	toggleLaunchMinimized,
+	toggleHideWindowOnMinimize,
+	toggleHideWindowOnBlur,
+	setTaskbarIconVisibility,
 } from './util';
 import {generateSubmenu as generateEmojiSubmenu} from './emoji';
 import {toggleMenuBarMode} from './menu-bar-mode';
@@ -388,7 +391,7 @@ Press Command/Ctrl+R in Caprine to see your changes.
 			click(menuItem) {
 				app.setLoginItemSettings({
 					openAtLogin: menuItem.checked,
-					openAsHidden: menuItem.checked,
+					openAsHidden: menuItem.checked && config.get('launchMinimized'),
 				});
 			},
 		},
@@ -401,14 +404,6 @@ Press Command/Ctrl+R in Caprine to see your changes.
 				config.set('autoHideMenuBar', menuItem.checked);
 				focusedWindow?.setAutoHideMenuBar(menuItem.checked);
 				focusedWindow?.setMenuBarVisibility(!menuItem.checked);
-
-				if (menuItem.checked) {
-					dialog.showMessageBox({
-						type: 'info',
-						message: 'Press the Alt key to toggle the menu bar.',
-						buttons: ['OK'],
-					});
-				}
 			},
 		},
 		{
@@ -433,10 +428,37 @@ Press Command/Ctrl+R in Caprine to see your changes.
 			id: 'showTrayIcon',
 			label: 'Show Tray Icon',
 			type: 'checkbox',
-			enabled: !is.macos && !config.get('launchMinimized'),
+			enabled: !is.macos && !config.get('launchMinimized') && !config.get('hideWindowOnMinimize') && !config.get('hideWindowOnBlur'),
 			checked: config.get('showTrayIcon'),
 			click() {
 				toggleTrayIcon();
+			},
+		},
+		{
+			label: 'Show Taskbar Icon',
+			type: 'checkbox',
+			visible: !is.macos,
+			checked: config.get('showTaskbarIcon'),
+			click(menuItem) {
+				setTaskbarIconVisibility(menuItem.checked);
+			},
+		},
+		{
+			label: 'Hide on Minimize',
+			type: 'checkbox',
+			visible: !is.macos,
+			checked: config.get('hideWindowOnMinimize'),
+			click() {
+				toggleHideWindowOnMinimize(menu);
+			},
+		},
+		{
+			label: 'Hide on Focus Loss',
+			type: 'checkbox',
+			visible: !is.macos,
+			checked: config.get('hideWindowOnBlur'),
+			click() {
+				toggleHideWindowOnBlur(menu);
 			},
 		},
 		{
@@ -766,13 +788,6 @@ ${debugInfo()}`;
 				submenu: preferencesSubmenu,
 			},
 			{
-				label: 'Messenger Preferences…',
-				accelerator: 'Command+,',
-				click() {
-					sendAction('show-preferences');
-				},
-			},
-			{
 				type: 'separator',
 			},
 			...switchItems,
@@ -832,13 +847,6 @@ ${debugInfo()}`;
 				{
 					label: 'Caprine Settings',
 					submenu: preferencesSubmenu,
-				},
-				{
-					label: 'Messenger Preferences',
-					accelerator: 'Control+,',
-					click() {
-						sendAction('show-preferences');
-					},
 				},
 				{
 					type: 'separator',

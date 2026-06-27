@@ -3,4 +3,6 @@ type Conversation = {
 	selected: boolean;
 	unread: boolean;
 	icon: string;
+	href?: string;
+	body?: string;
 };

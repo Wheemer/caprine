@@ -6,3 +6,13 @@ type NotificationEvent = {
 	icon: string;
 	silent: boolean;
 };
+
+type TrayIconState = {
+	messageCount: number;
+	isOnline: boolean;
+};
+
+type RenderedTrayIcon = {
+	data: string;
+	text: string;
+};
