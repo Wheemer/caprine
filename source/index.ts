@@ -90,6 +90,10 @@ let dockMenu: Menu;
 let isDNDEnabled = false;
 const notificationBridgeScript = readFileSync(path.join(__dirname, 'notifications-isolated.js'), 'utf8');
 let previousTrayRenderKey = '';
+let trayPulseTimer: NodeJS.Timeout | undefined;
+let trayPulseFrame = 0;
+let currentTrayMessageCount = 0;
+let currentTrayIsOnline = true;
 let startupSplashView: BrowserView | undefined;
 let startupSplashViewTimer: NodeJS.Timeout | undefined;
 let suppressBlurHideUntil = 0;
@@ -334,7 +338,44 @@ app.on('ready', () => {
 	});
 });
 
-async function updateTrayIcon(messageCount: number, isOnline: boolean): Promise<void> {
+function trayBadgePulseValue(): number {
+	const phase = (trayPulseFrame % 16) / 15;
+	return (1 - Math.cos(phase * Math.PI * 2)) / 2;
+}
+
+function shouldAnimateTrayBadge(messageCount: number, isOnline: boolean): boolean {
+	return is.windows && config.get('showUnreadBadge') && isOnline && messageCount > 0;
+}
+
+function stopTrayBadgePulse(): void {
+	if (trayPulseTimer) {
+		clearInterval(trayPulseTimer);
+		trayPulseTimer = undefined;
+	}
+
+	trayPulseFrame = 0;
+}
+
+function updateTrayBadgePulseTimer(messageCount: number, isOnline: boolean): void {
+	currentTrayMessageCount = messageCount;
+	currentTrayIsOnline = isOnline;
+
+	if (!shouldAnimateTrayBadge(messageCount, isOnline)) {
+		stopTrayBadgePulse();
+		return;
+	}
+
+	if (trayPulseTimer) {
+		return;
+	}
+
+	trayPulseTimer = setInterval(() => {
+		trayPulseFrame++;
+		void updateTrayIcon(currentTrayMessageCount, currentTrayIsOnline, true);
+	}, 110);
+}
+
+async function updateTrayIcon(messageCount: number, isOnline: boolean, forceRender = false): Promise<void> {
 	logDiagnostic('tray.update.requested', {messageCount, isOnline}, mainWindow);
 
 	if (!is.windows && !is.linux) {
@@ -342,15 +383,16 @@ async function updateTrayIcon(messageCount: number, isOnline: boolean): Promise<
 		return;
 	}
 
-	const trayRenderKey = `${messageCount}:${isOnline}:${config.get('showUnreadBadge')}`;
-	if (trayRenderKey === previousTrayRenderKey) {
+	const badgePulse = shouldAnimateTrayBadge(messageCount, isOnline) ? trayBadgePulseValue() : 0;
+	const trayRenderKey = `${messageCount}:${isOnline}:${config.get('showUnreadBadge')}:${badgePulse.toFixed(2)}`;
+	if (!forceRender && trayRenderKey === previousTrayRenderKey) {
 		tray.update(messageCount, undefined, isOnline);
 		logDiagnostic('tray.update.skipped-unchanged', {messageCount, isOnline}, mainWindow);
 		return;
 	}
 
 	try {
-		const trayIcon = await ipc.callRenderer<TrayIconState, RenderedTrayIcon>(mainWindow, 'render-tray-icon', {messageCount, isOnline});
+		const trayIcon = await ipc.callRenderer<TrayIconState, RenderedTrayIcon>(mainWindow, 'render-tray-icon', {messageCount, isOnline, badgePulse});
 		previousTrayRenderKey = trayRenderKey;
 		tray.update(messageCount, trayIcon.data, isOnline);
 		logDiagnostic('tray.update.rendered', {messageCount, isOnline, hasCustomIcon: Boolean(trayIcon.data)}, mainWindow);
@@ -399,6 +441,7 @@ async function updateBadge(messageCount: number, isOnline = true): Promise<void>
 		}
 	}
 
+	updateTrayBadgePulseTimer(messageCount, isOnline);
 	await updateTrayIcon(messageCount, isOnline);
 
 	if (is.windows) {
@@ -1327,6 +1370,10 @@ function notificationSoundPath(): string {
 	return path.join(basePath, 'static', 'sounds', 'messenger-notification.mp3');
 }
 
+function powershellString(value: string): string {
+	return `'${value.replaceAll('\'', '\'\'')}'`;
+}
+
 function playNotificationSound(): void {
 	const soundPath = notificationSoundPath();
 
@@ -1335,7 +1382,7 @@ function playNotificationSound(): void {
 	} else if (is.linux) {
 		exec(`gst-play-1.0 --no-interactive --quiet "${soundPath}" 2>/dev/null || paplay "${soundPath}" 2>/dev/null || aplay "${soundPath}"`);
 	} else if (is.windows) {
-		exec(`powershell -c Add-Type -AssemblyName presentationCore; $player = New-Object system.windows.media.mediaplayer; $player.open('${soundPath}'); $player.Play(); Start-Sleep -s $player.NaturalDuration.TimeSpan.TotalSeconds`);
+		exec(`powershell -NoProfile -Command "Add-Type -AssemblyName PresentationCore; $player = New-Object System.Windows.Media.MediaPlayer; $player.Open([uri]${powershellString(soundPath)}); $player.Play(); Start-Sleep -Milliseconds 2500; $player.Close()"`);
 	}
 }
 

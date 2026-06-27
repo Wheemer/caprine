@@ -266,13 +266,16 @@ webFrame.insertCSS(`
 		display: none;
 	}
 
-	html.caprine-custom-menu-bar-open [role="navigation"]:has([role="grid"]) {
-		transform: translateY(22px);
+	html.os-win32 {
+		--caprine-top-content-offset: 6px;
 	}
 
-	html.caprine-custom-menu-bar-open [role="main"],
-	html.caprine-custom-menu-bar-open [role="complementary"] {
-		transform: translateY(22px);
+	html.os-win32 [role="navigation"]:has([role="grid"]),
+	html.os-win32 [role="main"],
+	html.os-win32 [role="complementary"] {
+		height: calc(100% - var(--caprine-top-content-offset)) !important;
+		max-height: calc(100% - var(--caprine-top-content-offset)) !important;
+		transform: translateY(var(--caprine-top-content-offset));
 	}
 
 	.caprine-sidebar-brand {
@@ -1040,14 +1043,22 @@ async function imageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
 	});
 }
 
-function drawTrayUnreadBadge(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, messageCount: number): void {
+function drawTrayUnreadBadge(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, messageCount: number, badgePulse = 0): void {
 	const countText = String(Math.min(99, messageCount));
-	const badgeRadius = canvas.width * 0.28;
+	const pulse = Math.max(0, Math.min(1, badgePulse));
+	const badgeRadius = canvas.width * (0.26 + (pulse * 0.035));
 	const centerX = canvas.width - badgeRadius;
 	const centerY = badgeRadius;
 
 	context.save();
-	context.fillStyle = '#f42020';
+	context.globalAlpha = 0.2 + (pulse * 0.18);
+	context.fillStyle = '#ff4a5a';
+	context.beginPath();
+	context.arc(centerX, centerY, badgeRadius + (canvas.width * 0.08), 0, Math.PI * 2);
+	context.fill();
+
+	context.globalAlpha = 1;
+	context.fillStyle = pulse > 0.45 ? '#ff3348' : '#f42020';
 	context.beginPath();
 	context.arc(centerX, centerY, badgeRadius, 0, Math.PI * 2);
 	context.fill();
@@ -1064,7 +1075,7 @@ function drawTrayUnreadBadge(context: CanvasRenderingContext2D, canvas: HTMLCanv
 	context.restore();
 }
 
-async function renderTrayIconCanvas({messageCount, isOnline}: TrayIconState): Promise<HTMLCanvasElement> {
+async function renderTrayIconCanvas({messageCount, isOnline, badgePulse = 0}: TrayIconState): Promise<HTMLCanvasElement> {
 	const iconName = isOnline ? 'IconTray.png' : 'IconTrayOffline.png';
 	const sourceImage = await imageFromDataUrl(loadStaticImageDataUrl(iconName));
 	const canvas = document.createElement('canvas');
@@ -1075,7 +1086,7 @@ async function renderTrayIconCanvas({messageCount, isOnline}: TrayIconState): Pr
 	context.drawImage(sourceImage, 0, 0);
 
 	if (isOnline && messageCount > 0) {
-		drawTrayUnreadBadge(context, canvas, messageCount);
+		drawTrayUnreadBadge(context, canvas, messageCount, badgePulse);
 	}
 
 	return canvas;

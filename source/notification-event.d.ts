@@ -10,6 +10,7 @@ type NotificationEvent = {
 type TrayIconState = {
 	messageCount: number;
 	isOnline: boolean;
+	badgePulse?: number;
 };
 
 type RenderedTrayIcon = {
