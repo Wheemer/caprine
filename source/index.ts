@@ -21,7 +21,7 @@ import {
 	type Event as ElectronEvent,
 } from 'electron';
 import {ipcMain as ipc} from 'electron-better-ipc';
-import {autoUpdater, type UpdateDownloadedEvent} from 'electron-updater';
+import {autoUpdater} from 'electron-updater';
 import electronDl from 'electron-dl';
 import electronContextMenu from 'electron-context-menu';
 import electronLocalshortcut from 'electron-localshortcut';
@@ -93,6 +93,11 @@ let currentTrayIsOnline = true;
 let startupSplashView: BrowserView | undefined;
 let startupSplashViewTimer: NodeJS.Timeout | undefined;
 let suppressBlurHideUntil = 0;
+let updateDownloadInProgress = false;
+
+type UpdateToastInfo = {
+	version: string;
+};
 
 type HomeAssistantNotificationPayload = {
 	id?: number | string;
@@ -1562,7 +1567,7 @@ function positionUpdateNotification(): void {
 	});
 }
 
-function showUpdateNotification(updateInfo: UpdateDownloadedEvent): void {
+function showUpdateNotification(updateInfo: UpdateToastInfo): void {
 	closeUpdateNotification();
 
 	updateNotificationWindow = new BrowserWindow({
@@ -1607,12 +1612,7 @@ function handleUpdaterToastTestArgument(argv = process.argv): void {
 	const [, version = app.getVersion()] = argument.split('=');
 	showUpdateNotification({
 		version,
-		downloadedFile: '',
-		files: [],
-		path: '',
-		sha512: '',
-		releaseDate: new Date().toISOString(),
-	} as UpdateDownloadedEvent);
+	});
 }
 
 async function readRequestBody(request: IncomingMessage): Promise<string> {
@@ -1795,14 +1795,31 @@ function checkForUpdates(): void {
 
 function setUpAutoUpdater(): void {
 	const FOUR_HOURS = 1000 * 60 * 60 * 4;
-	autoUpdater.autoDownload = true;
+	autoUpdater.autoDownload = false;
+	autoUpdater.autoInstallOnAppQuit = false;
+
+	autoUpdater.on('update-available', updateInfo => {
+		if (updateDownloadInProgress) {
+			return;
+		}
+
+		updateDownloadInProgress = true;
+		logDiagnostic('updater.update-available.download-started', {version: updateInfo.version}, mainWindow);
+
+		void autoUpdater.downloadUpdate().catch(error => {
+			updateDownloadInProgress = false;
+			logDiagnostic('updater.download.failed', {message: error instanceof Error ? error.message : String(error)}, mainWindow);
+		});
+	});
 
 	autoUpdater.on('update-downloaded', updateInfo => {
+		updateDownloadInProgress = false;
 		logDiagnostic('updater.update-downloaded', {version: updateInfo.version}, mainWindow);
 		showUpdateNotification(updateInfo);
 	});
 
 	autoUpdater.on('error', error => {
+		updateDownloadInProgress = false;
 		logDiagnostic('updater.error', {message: error instanceof Error ? error.message : String(error)}, mainWindow);
 	});
 
@@ -1812,7 +1829,7 @@ function setUpAutoUpdater(): void {
 
 ipc.on('caprine-update-now', () => {
 	closeUpdateNotification();
-	autoUpdater.quitAndInstall(false, true);
+	autoUpdater.quitAndInstall(true, true);
 });
 
 ipc.on('caprine-update-dismiss', () => {
