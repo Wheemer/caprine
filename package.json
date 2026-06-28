@@ -1,7 +1,7 @@
 {
 	"name": "caprine",
 	"productName": "Caprine",
-	"version": "2.61.27",
+	"version": "2.61.28",
 	"description": "Focused Facebook Messenger desktop app for Windows",
 	"license": "MIT",
 	"repository": "Wheemer/caprine",
@@ -28,12 +28,13 @@
 		"test": "npm run test:tsc && npm run lint",
 		"start": "tsc && electron .",
 		"build": "tsc",
-		"dist:win": "electron-builder --win",
+		"dist:win": "powershell -NoProfile -ExecutionPolicy Bypass -File build/dist-win.ps1",
 		"release": "np --no-publish"
 	},
 	"dependencies": {
 		"@electron/remote": "^2.1.2",
 		"@sindresorhus/do-not-disturb": "^1.1.0",
+		"bonjour-service": "^1.4.2",
 		"electron-better-ipc": "^2.0.1",
 		"electron-context-menu": "^3.6.1",
 		"electron-debug": "^3.2.0",

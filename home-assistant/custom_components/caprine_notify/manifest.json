@@ -1,0 +1,16 @@
+{
+  "domain": "caprine_notify",
+  "name": "Caprine Notify",
+  "codeowners": [
+    "@Wheemer"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/Wheemer/caprine",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/Wheemer/caprine/issues",
+  "requirements": [],
+  "zeroconf": [
+    "_caprine-notify._tcp.local."
+  ],
+  "version": "0.1.0"
+}

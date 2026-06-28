@@ -42,6 +42,12 @@ export type StoreType = {
 	autoHideMenuBar: boolean;
 	autoUpdate: boolean;
 	notificationsMuted: boolean;
+	homeAssistantNotifications: {
+		enabled: boolean;
+		host: string;
+		port: number;
+		token: string;
+	};
 	callRingtoneMuted: boolean;
 	hardwareAcceleration: boolean;
 	quitOnWindowClose: boolean;
@@ -212,6 +218,29 @@ const schema: Store.Schema<StoreType> = {
 	notificationsMuted: {
 		type: 'boolean',
 		default: false,
+	},
+	homeAssistantNotifications: {
+		type: 'object',
+		properties: {
+			enabled: {
+				type: 'boolean',
+			},
+			host: {
+				type: 'string',
+			},
+			port: {
+				type: 'number',
+			},
+			token: {
+				type: 'string',
+			},
+		},
+		default: {
+			enabled: true,
+			host: '0.0.0.0',
+			port: 32_174,
+			token: '',
+		},
 	},
 	callRingtoneMuted: {
 		type: 'boolean',

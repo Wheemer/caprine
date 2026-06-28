@@ -266,6 +266,34 @@ webFrame.insertCSS(`
 		display: none;
 	}
 
+	#caprine-media-download-all {
+		position: fixed;
+		right: 18px;
+		bottom: 18px;
+		z-index: 1000004;
+		display: none;
+		align-items: center;
+		justify-content: center;
+		width: 40px;
+		height: 40px;
+		border: 0;
+		border-radius: 50%;
+		background: rgba(36, 37, 38, .92);
+		box-shadow: 0 8px 24px rgba(0, 0, 0, .34);
+		color: #f0f2f5;
+		font: 20px/1 "Segoe UI Symbol", "Segoe UI", sans-serif;
+		pointer-events: auto;
+		-webkit-app-region: no-drag;
+	}
+
+	#caprine-media-download-all:hover {
+		background: rgba(58, 59, 60, .98);
+	}
+
+	html.caprine-media-viewer-open #caprine-media-download-all.caprine-visible {
+		display: flex;
+	}
+
 	html.os-win32 {
 		--caprine-top-content-offset: 6px;
 	}
@@ -1726,6 +1754,40 @@ function filenameFromMimeType(mimeType: string): string {
 	return extension[base] ?? 'download';
 }
 
+function isDownloadLink(link: HTMLAnchorElement, target: HTMLElement): boolean {
+	const label = [
+		link.getAttribute('download'),
+		link.getAttribute('aria-label'),
+		link.getAttribute('title'),
+		target.closest('[aria-label]')?.getAttribute('aria-label'),
+		target.closest('[title]')?.getAttribute('title'),
+		target.textContent,
+	]
+		.filter(Boolean)
+		.join(' ')
+		.toLowerCase();
+
+	return link.hasAttribute('download') || /\bdownload\b/.test(label);
+}
+
+function linkLabel(link: HTMLAnchorElement, target: HTMLElement): string {
+	return [
+		link.getAttribute('aria-label'),
+		link.getAttribute('title'),
+		target.closest('[aria-label]')?.getAttribute('aria-label'),
+		target.closest('[title]')?.getAttribute('title'),
+		target.textContent,
+	]
+		.filter(Boolean)
+		.join(' ')
+		.toLowerCase();
+}
+
+function isFacebookNativeActionLink(link: HTMLAnchorElement, target: HTMLElement): boolean {
+	const label = linkLabel(link, target);
+	return /\b(share|forward|send)\b/.test(label);
+}
+
 function handleLinkClick(event: MouseEvent, target: HTMLElement): boolean {
 	const link = target.closest<HTMLAnchorElement>('a[href]');
 	if (!link) {
@@ -1747,6 +1809,35 @@ function handleLinkClick(event: MouseEvent, target: HTMLElement): boolean {
 
 	const fullUrl = href.startsWith('http') ? href : new URL(href, window.location.href).href;
 	const url = new URL(fullUrl);
+
+	if (isFacebookNativeActionLink(link, target)) {
+		return false;
+	}
+
+	if (isDownloadLink(link, target)) {
+		event.preventDefault();
+		event.stopPropagation();
+		event.stopImmediatePropagation();
+
+		if (href.startsWith('blob:')) {
+			void (async () => {
+				try {
+					const response = await fetch(href);
+					const arrayBuffer = await response.arrayBuffer();
+					const contentType = response.headers.get('content-type') ?? 'application/octet-stream';
+					const filename
+						= link.getAttribute('download')
+						?? link.textContent?.trim()
+						?? filenameFromMimeType(contentType);
+					await ipc.callMain('save-blob-file', {data: arrayBuffer, filename});
+				} catch {}
+			})();
+		} else {
+			ipc.callMain('download-url', fullUrl);
+		}
+
+		return true;
+	}
 
 	if (isInternalUrl(url)) {
 		return false;
@@ -1934,6 +2025,54 @@ function mainMediaViewerElement(): HTMLImageElement | HTMLVideoElement | undefin
 	return mediaViewerCandidates()[0]?.element;
 }
 
+function mediaViewerDialog(): Element | undefined {
+	const media = mainMediaViewerElement();
+	return media?.closest('[role="dialog"], [aria-modal="true"]') ?? undefined;
+}
+
+function isDownloadableMediaUrl(url: string): boolean {
+	if (!url || url.startsWith('data:')) {
+		return false;
+	}
+
+	if (url.startsWith('blob:')) {
+		return true;
+	}
+
+	try {
+		const parsed = new URL(url, window.location.href);
+		return parsed.hostname.includes('fbcdn.net')
+			|| parsed.hostname.includes('facebook.com')
+			|| /\.(?:avif|gif|jpe?g|png|webp|mp4)(?:$|[?#])/i.test(parsed.href);
+	} catch {
+		return false;
+	}
+}
+
+function mediaViewerCollectionUrls(): string[] {
+	const root = mediaViewerDialog() ?? document.body;
+	const urls = new Set<string>();
+
+	for (const link of root.querySelectorAll<HTMLAnchorElement>('a[href]')) {
+		const {href} = link;
+		if (isDownloadLink(link, link) || isDownloadableMediaUrl(href)) {
+			urls.add(href);
+		}
+	}
+
+	for (const media of root.querySelectorAll<HTMLImageElement | HTMLVideoElement>('img, video')) {
+		const url = media instanceof HTMLImageElement
+			? media.currentSrc || media.src
+			: media.currentSrc || media.src || media.poster;
+
+		if (isDownloadableMediaUrl(url)) {
+			urls.add(url);
+		}
+	}
+
+	return [...urls];
+}
+
 function mediaViewerSignature(media: HTMLImageElement | HTMLVideoElement | undefined): string | undefined {
 	if (!media) {
 		return;
@@ -2039,6 +2178,36 @@ function resetZoomWhenMediaChanges(): void {
 	resetMediaViewerZoom();
 }
 
+function ensureMediaViewerDownloadAllButton(): HTMLButtonElement {
+	let button = document.querySelector<HTMLButtonElement>('#caprine-media-download-all');
+	if (button) {
+		return button;
+	}
+
+	button = document.createElement('button');
+	button.id = 'caprine-media-download-all';
+	button.type = 'button';
+	button.title = 'Download all images in this collection';
+	button.setAttribute('aria-label', 'Download all images in this collection');
+	button.textContent = '↓';
+	button.addEventListener('click', event => {
+		event.preventDefault();
+		event.stopPropagation();
+
+		for (const url of mediaViewerCollectionUrls()) {
+			ipc.callMain('download-url', url);
+		}
+	});
+	document.body.append(button);
+	return button;
+}
+
+function updateMediaViewerDownloadAllButton(): void {
+	const button = ensureMediaViewerDownloadAllButton();
+	const urls = mediaViewerCollectionUrls();
+	button.classList.toggle('caprine-visible', hasMediaViewerDialog() && urls.length > 1);
+}
+
 function setupMediaViewerZoom(): void {
 	document.addEventListener('dblclick', event => {
 		const media = mediaViewerElementAt(event);
@@ -2135,6 +2304,7 @@ function setupMediaViewerWindowControls(): void {
 		if (open === mediaViewerOpen) {
 			if (open) {
 				resetZoomWhenMediaChanges();
+				updateMediaViewerDownloadAllButton();
 			}
 
 			return;
@@ -2150,6 +2320,8 @@ function setupMediaViewerWindowControls(): void {
 			currentMediaViewerSignature = undefined;
 			resetMediaViewerZoom();
 		}
+
+		updateMediaViewerDownloadAllButton();
 	};
 
 	update();
@@ -2169,6 +2341,7 @@ window.addEventListener('load', async () => {
 	setupSkipLinkHider();
 	setupMediaViewerWindowControls();
 	setupMediaViewerZoom();
+	updateMediaViewerDownloadAllButton();
 
 	if (location.pathname.startsWith('/login')) {
 		const keepMeSignedInCheckbox = document.querySelector<HTMLInputElement>('[id^="u_0_0"]')!;

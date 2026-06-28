@@ -2,6 +2,8 @@ import path from 'node:path';
 import {readFileSync, existsSync, promises as fs} from 'node:fs';
 import {exec} from 'node:child_process';
 import process from 'node:process';
+import http, {type IncomingMessage, type ServerResponse} from 'node:http';
+import os from 'node:os';
 import {
 	app,
 	nativeImage,
@@ -19,13 +21,14 @@ import {
 	type Event as ElectronEvent,
 } from 'electron';
 import {ipcMain as ipc} from 'electron-better-ipc';
-import {autoUpdater} from 'electron-updater';
+import {autoUpdater, type UpdateDownloadedEvent} from 'electron-updater';
 import electronDl from 'electron-dl';
 import electronContextMenu from 'electron-context-menu';
 import electronLocalshortcut from 'electron-localshortcut';
 import electronDebug from 'electron-debug';
 import {is, darkMode} from 'electron-util';
 import {bestFacebookLocaleFor} from 'facebook-locales';
+import {Bonjour} from 'bonjour-service';
 import doNotDisturb from '@sindresorhus/do-not-disturb';
 import updateAppMenu from './menu';
 import config, {StoreType} from './config';
@@ -73,14 +76,7 @@ if (!config.get('hardwareAcceleration')) {
 }
 
 if (!is.development && config.get('autoUpdate')) {
-	(async () => {
-		const FOUR_HOURS = 1000 * 60 * 60 * 4;
-		setInterval(async () => {
-			await autoUpdater.checkForUpdatesAndNotify();
-		}, FOUR_HOURS);
-
-		await autoUpdater.checkForUpdatesAndNotify();
-	})();
+	setUpAutoUpdater();
 }
 
 let mainWindow: BrowserWindow;
@@ -98,6 +94,20 @@ let startupSplashView: BrowserView | undefined;
 let startupSplashViewTimer: NodeJS.Timeout | undefined;
 let suppressBlurHideUntil = 0;
 
+type HomeAssistantNotificationPayload = {
+	id?: number | string;
+	title?: string;
+	message?: string;
+	body?: string;
+	icon?: string;
+	url?: string;
+	persistent?: boolean;
+	timeoutMs?: number;
+	silent?: boolean;
+};
+
+let homeAssistantBonjour: Bonjour | undefined;
+
 function suppressStartupBlurHide(duration = 15_000): void {
 	suppressBlurHideUntil = Math.max(suppressBlurHideUntil, Date.now() + duration);
 }
@@ -106,9 +116,17 @@ function isStartupBlurHideSuppressed(): boolean {
 	return Boolean(startupSplashView) || Date.now() < suppressBlurHideUntil;
 }
 
-function appIconDataUrl(): string {
-	const iconBuffer = readFileSync(path.join(__dirname, '..', 'static', 'IconSplash.png'));
+function staticImageDataUrl(name: string): string {
+	const iconBuffer = readFileSync(path.join(__dirname, '..', 'static', name));
 	return `data:image/png;base64,${iconBuffer.toString('base64')}`;
+}
+
+function appIconDataUrl(): string {
+	return staticImageDataUrl('IconSplash.png');
+}
+
+function appBlueIconDataUrl(): string {
+	return staticImageDataUrl('IconAppBlue.png');
 }
 
 function startupSplashHtml(): string {
@@ -324,9 +342,10 @@ if (!app.requestSingleInstanceLock()) {
 	app.quit();
 }
 
-app.on('second-instance', () => {
+app.on('second-instance', (_event, argv) => {
 	if (mainWindow) {
 		showAndFocusWindow(mainWindow);
+		handleUpdaterToastTestArgument(argv);
 	}
 });
 
@@ -864,8 +883,11 @@ function createMainWindow(): BrowserWindow {
 	logDiagnostic('app.ready');
 	await updateAppMenu();
 	mainWindow = createMainWindow();
+	setUpHomeAssistantNotifications();
 
 	if (is.windows) {
+		handleUpdaterToastTestArgument();
+
 		const jumpToConversationMatch = process.argv.find(argument => /^--jump-to-conversation=\d+$/.test(argument));
 		if (jumpToConversationMatch) {
 			const conversationIndex = Number.parseInt(jumpToConversationMatch.split('=')[1], 10);
@@ -1267,6 +1289,10 @@ ipc.answerRenderer('open-external', async (url: string) => {
 	await shell.openExternal(url);
 });
 
+ipc.answerRenderer('download-url', (url: string) => {
+	mainWindow.webContents.downloadURL(url);
+});
+
 const cleanMenuLabel = (label: string): string => label
 	.replaceAll('&', '')
 	.replaceAll(/\t.*$/g, '');
@@ -1353,6 +1379,7 @@ if (is.linux) {
 const notifications = new Map();
 const notificationHrefs = new Map<number, string>();
 const customNotificationWindows = new Map<number, BrowserWindow>();
+let updateNotificationWindow: BrowserWindow | undefined;
 
 function escapeHtml(value: string): string {
 	return value
@@ -1385,6 +1412,412 @@ function playNotificationSound(): void {
 		exec(`powershell -NoProfile -Command "Add-Type -AssemblyName PresentationCore; $player = New-Object System.Windows.Media.MediaPlayer; $player.Open([uri]${powershellString(soundPath)}); $player.Play(); Start-Sleep -Milliseconds 2500; $player.Close()"`);
 	}
 }
+
+function customUpdateNotificationHtml(version: string): string {
+	const appIcon = appBlueIconDataUrl();
+	return `
+		<!doctype html>
+		<html>
+			<head>
+				<meta charset="utf-8">
+				<style>
+					html,
+					body {
+						width: 100%;
+						height: 100%;
+						margin: 0;
+						overflow: hidden;
+						background: transparent;
+						font-family: "Segoe UI", system-ui, sans-serif;
+						user-select: none;
+					}
+
+					.toast {
+						box-sizing: border-box;
+						width: 100%;
+						height: 100%;
+						display: grid;
+						grid-template-columns: 80px 1fr;
+						gap: 16px;
+						padding: 14px;
+						border: 1px solid rgba(255, 255, 255, .12);
+						border-radius: 8px;
+						background: #242526;
+						box-shadow: 0 12px 32px rgba(0, 0, 0, .35);
+						color: #f0f2f5;
+					}
+
+					.avatar {
+						width: 80px;
+						height: 80px;
+						object-fit: contain;
+					}
+
+					.content {
+						min-width: 0;
+					}
+
+					.title {
+						margin: 0 0 5px;
+						color: #fff;
+						font-size: 14px;
+						font-weight: 650;
+						line-height: 18px;
+					}
+
+					.body {
+						margin: 0 0 12px;
+						color: #d0d3d7;
+						font-size: 13px;
+						line-height: 17px;
+					}
+
+					.actions {
+						display: flex;
+						gap: 8px;
+						justify-content: flex-end;
+					}
+
+					button {
+						height: 30px;
+						padding: 0 13px;
+						border: 0;
+						border-radius: 6px;
+						font: inherit;
+						font-size: 13px;
+						font-weight: 600;
+						color: #f0f2f5;
+					}
+
+					.update {
+						background: #1683f5;
+					}
+
+					.update:hover {
+						background: #2d91f7;
+					}
+
+					.dismiss {
+						background: #3a3b3c;
+					}
+
+					.dismiss:hover {
+						background: #4b4c4f;
+					}
+				</style>
+			</head>
+			<body>
+				<div class="toast">
+					<img class="avatar" src="${appIcon}" alt="">
+					<div class="content">
+						<p class="title">Caprine update ready</p>
+						<p class="body">Version ${escapeHtml(version)} has downloaded and is ready to install.</p>
+						<div class="actions">
+							<button class="dismiss" id="dismiss" type="button">Dismiss</button>
+							<button class="update" id="update" type="button">Update now</button>
+						</div>
+					</div>
+				</div>
+				<script>
+					const {ipcRenderer} = require('electron');
+					document.getElementById('update').addEventListener('click', () => {
+						ipcRenderer.send('caprine-update-now');
+					});
+					document.getElementById('dismiss').addEventListener('click', () => {
+						ipcRenderer.send('caprine-update-dismiss');
+					});
+				</script>
+			</body>
+		</html>
+	`;
+}
+
+function closeUpdateNotification(): void {
+	if (!updateNotificationWindow) {
+		return;
+	}
+
+	const window = updateNotificationWindow;
+	updateNotificationWindow = undefined;
+
+	if (!window.isDestroyed()) {
+		window.close();
+	}
+}
+
+function positionUpdateNotification(): void {
+	if (!updateNotificationWindow || updateNotificationWindow.isDestroyed()) {
+		return;
+	}
+
+	const {workArea} = electronScreen.getPrimaryDisplay();
+	const width = 440;
+	const height = 132;
+	const margin = 14;
+	updateNotificationWindow.setBounds({
+		x: Math.round(workArea.x + workArea.width - width - margin),
+		y: Math.round(workArea.y + workArea.height - height - margin),
+		width,
+		height,
+	});
+}
+
+function showUpdateNotification(updateInfo: UpdateDownloadedEvent): void {
+	closeUpdateNotification();
+
+	updateNotificationWindow = new BrowserWindow({
+		width: 440,
+		height: 132,
+		show: false,
+		frame: false,
+		transparent: true,
+		resizable: false,
+		movable: false,
+		minimizable: false,
+		maximizable: false,
+		closable: true,
+		alwaysOnTop: true,
+		skipTaskbar: true,
+		focusable: true,
+		acceptFirstMouse: true,
+		webPreferences: {
+			nodeIntegration: true,
+			contextIsolation: false,
+			backgroundThrottling: false,
+		},
+	});
+
+	updateNotificationWindow.on('closed', () => {
+		updateNotificationWindow = undefined;
+	});
+
+	updateNotificationWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(customUpdateNotificationHtml(updateInfo.version))}`);
+	updateNotificationWindow.once('ready-to-show', () => {
+		positionUpdateNotification();
+		updateNotificationWindow?.showInactive();
+	});
+}
+
+function handleUpdaterToastTestArgument(argv = process.argv): void {
+	const argument = argv.find(argument => argument.startsWith('--caprine-test-update-toast'));
+	if (!argument) {
+		return;
+	}
+
+	const [, version = app.getVersion()] = argument.split('=');
+	showUpdateNotification({
+		version,
+		downloadedFile: '',
+		files: [],
+		path: '',
+		sha512: '',
+		releaseDate: new Date().toISOString(),
+	} as UpdateDownloadedEvent);
+}
+
+async function readRequestBody(request: IncomingMessage): Promise<string> {
+	return new Promise<string>((resolve, reject) => {
+		let body = '';
+		request.setEncoding('utf8');
+		request.on('data', (chunk: string) => {
+			body += chunk;
+			if (body.length > 65_536) {
+				reject(new Error('Request body too large'));
+				request.destroy();
+			}
+		});
+		request.on('end', () => {
+			resolve(body);
+		});
+		request.on('error', reject);
+	});
+}
+
+function sendJson(response: ServerResponse, statusCode: number, data: Record<string, unknown>): void {
+	response.writeHead(statusCode, {'content-type': 'application/json'});
+	response.end(JSON.stringify(data));
+}
+
+function caprineDiscoveryId(): string {
+	return `caprine-${app.getPath('userData').replaceAll(/[^\da-z]/gi, '').slice(-12).toLowerCase()}`;
+}
+
+function isHomeAssistantNotificationAuthorized(request: IncomingMessage): boolean {
+	const {token} = config.get('homeAssistantNotifications');
+	if (!token) {
+		return true;
+	}
+
+	const {authorization} = request.headers;
+	const headerToken = request.headers['x-caprine-token'];
+	return authorization === `Bearer ${token}` || headerToken === token;
+}
+
+function normalizeNotificationId(id?: number | string): number {
+	if (typeof id === 'number' && Number.isInteger(id)) {
+		return id;
+	}
+
+	if (typeof id === 'string' && id.trim()) {
+		let hash = 0;
+		for (const character of id) {
+			hash = Math.trunc(((hash * 31) + character.codePointAt(0)!) % 100_000);
+		}
+
+		return 200_000 + Math.abs(hash % 100_000);
+	}
+
+	return 200_000 + Date.now();
+}
+
+function showHomeAssistantNotification(payload: HomeAssistantNotificationPayload): void {
+	const title = payload.title?.trim() ?? 'Home Assistant';
+	const body = payload.message ?? payload.body ?? '';
+	const timeoutMs = payload.persistent ? false : Math.max(1500, Math.min(payload.timeoutMs ?? 7000, 60_000));
+
+	if (!payload.silent) {
+		playNotificationSound();
+	}
+
+	showCustomNotification({
+		id: normalizeNotificationId(payload.id),
+		href: payload.url,
+		title,
+		body,
+		icon: payload.icon ?? '',
+		timeoutMs,
+	});
+}
+
+async function handleHomeAssistantNotificationRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
+	if (request.method === 'GET' && request.url === '/health') {
+		sendJson(response, 200, {ok: true});
+		return;
+	}
+
+	if (request.method === 'GET' && request.url === '/discovery') {
+		const settings = config.get('homeAssistantNotifications');
+		sendJson(response, 200, {
+			ok: true,
+			name: app.name,
+			productName: 'Caprine',
+			id: caprineDiscoveryId(),
+			port: settings.port,
+			requiresToken: Boolean(settings.token),
+		});
+		return;
+	}
+
+	if (request.method !== 'POST' || request.url !== '/notify') {
+		sendJson(response, 404, {ok: false, error: 'not_found'});
+		return;
+	}
+
+	if (!isHomeAssistantNotificationAuthorized(request)) {
+		sendJson(response, 401, {ok: false, error: 'unauthorized'});
+		return;
+	}
+
+	try {
+		const body = await readRequestBody(request);
+		const payload = JSON.parse(body) as HomeAssistantNotificationPayload;
+		showHomeAssistantNotification(payload);
+		sendJson(response, 200, {ok: true});
+	} catch (error) {
+		sendJson(response, 400, {ok: false, error: error instanceof Error ? error.message : 'bad_request'});
+	}
+}
+
+function setUpHomeAssistantNotifications(): void {
+	const settings = config.get('homeAssistantNotifications');
+	if (!settings.enabled) {
+		return;
+	}
+
+	const server = http.createServer((request, response) => {
+		void handleHomeAssistantNotificationRequest(request, response);
+	});
+
+	server.on('error', error => {
+		logDiagnostic('ha-notifications.server.error', {message: error.message}, mainWindow);
+	});
+
+	server.listen(settings.port, settings.host, () => {
+		logDiagnostic('ha-notifications.server.listening', {
+			host: settings.host,
+			port: settings.port,
+			hasToken: Boolean(settings.token),
+		}, mainWindow);
+
+		setUpHomeAssistantDiscovery(settings.port, Boolean(settings.token));
+	});
+}
+
+function setUpHomeAssistantDiscovery(port: number, requiresToken: boolean): void {
+	if (homeAssistantBonjour) {
+		return;
+	}
+
+	try {
+		homeAssistantBonjour = new Bonjour(undefined, (error: Error) => {
+			logDiagnostic('ha-notifications.discovery.error', {message: error.message}, mainWindow);
+		});
+
+		homeAssistantBonjour.publish({
+			name: `Caprine on ${os.hostname()}`,
+			type: 'caprine-notify',
+			port,
+			txt: {
+				id: caprineDiscoveryId(),
+				name: app.name,
+				product: 'Caprine',
+				path: '/notify',
+				discoveryPath: '/discovery',
+				requiresToken: requiresToken ? 'true' : 'false',
+			},
+		});
+
+		logDiagnostic('ha-notifications.discovery.published', {
+			type: '_caprine-notify._tcp.local.',
+			port,
+			requiresToken,
+		}, mainWindow);
+	} catch (error) {
+		logDiagnostic('ha-notifications.discovery.publish-failed', {message: error instanceof Error ? error.message : String(error)}, mainWindow);
+	}
+}
+
+function checkForUpdates(): void {
+	void autoUpdater.checkForUpdates().catch(error => {
+		logDiagnostic('updater.check.failed', {message: error instanceof Error ? error.message : String(error)}, mainWindow);
+	});
+}
+
+function setUpAutoUpdater(): void {
+	const FOUR_HOURS = 1000 * 60 * 60 * 4;
+	autoUpdater.autoDownload = true;
+
+	autoUpdater.on('update-downloaded', updateInfo => {
+		logDiagnostic('updater.update-downloaded', {version: updateInfo.version}, mainWindow);
+		showUpdateNotification(updateInfo);
+	});
+
+	autoUpdater.on('error', error => {
+		logDiagnostic('updater.error', {message: error instanceof Error ? error.message : String(error)}, mainWindow);
+	});
+
+	setInterval(checkForUpdates, FOUR_HOURS);
+	checkForUpdates();
+}
+
+ipc.on('caprine-update-now', () => {
+	closeUpdateNotification();
+	autoUpdater.quitAndInstall(false, true);
+});
+
+ipc.on('caprine-update-dismiss', () => {
+	closeUpdateNotification();
+});
 
 function customNotificationHtml({id, title, body, icon}: {id: number; title: string; body: string; icon: string}): string {
 	const appIcon = appIconDataUrl();
@@ -1538,7 +1971,7 @@ function closeCustomNotification(id: number, reason: 'click' | 'close' | 'timeou
 	positionCustomNotifications();
 }
 
-function showCustomNotification({id, href, title, body, icon}: {id: number; href?: string; title: string; body: string; icon: string}): void {
+function showCustomNotification({id, href, title, body, icon, timeoutMs = 7000}: {id: number; href?: string; title: string; body: string; icon: string; timeoutMs?: number | false}): void {
 	closeCustomNotification(id, 'close');
 
 	const notificationWindow = new BrowserWindow({
@@ -1592,9 +2025,11 @@ function showCustomNotification({id, href, title, body, icon}: {id: number; href
 		notificationWindow.showInactive();
 	});
 
-	setTimeout(() => {
-		closeCustomNotification(id, 'timeout');
-	}, 7000);
+	if (timeoutMs !== false) {
+		setTimeout(() => {
+			closeCustomNotification(id, 'timeout');
+		}, timeoutMs);
+	}
 }
 
 ipc.on('caprine-custom-notification-click', (_event, id: number) => {

@@ -1,0 +1,73 @@
+{
+  "title": "Caprine Notify",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect Caprine",
+        "description": "Add a Caprine desktop app notification target.",
+        "data": {
+          "name": "Name",
+          "host": "Host",
+          "port": "Port",
+          "token": "Token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach Caprine. Make sure Caprine is running and Home Assistant can reach the notification port."
+    },
+    "abort": {
+      "already_configured": "This Caprine target is already configured."
+    },
+    "flow_title": "{name}"
+  },
+  "entity": {
+    "sensor": {
+      "none": {
+        "name": "None"
+      }
+    }
+  },
+  "services": {
+    "send_notification": {
+      "name": "Send Caprine notification",
+      "description": "Send a rich notification to one or more Caprine desktop apps.",
+      "fields": {
+        "targets": {
+          "name": "Targets",
+          "description": "Optional list of Caprine config entry names or IDs. Leave empty to send to all configured Caprine targets."
+        },
+        "title": {
+          "name": "Title"
+        },
+        "message": {
+          "name": "Message"
+        },
+        "url": {
+          "name": "URL",
+          "description": "Optional URL to open when the notification is clicked."
+        },
+        "icon": {
+          "name": "Icon",
+          "description": "Optional icon URL or local path for the notification."
+        },
+        "persistent": {
+          "name": "Persistent",
+          "description": "Keep the notification visible until it is dismissed."
+        },
+        "timeout": {
+          "name": "Timeout",
+          "description": "Seconds before the notification closes when it is not persistent."
+        },
+        "silent": {
+          "name": "Silent",
+          "description": "Do not play a notification sound."
+        },
+        "id": {
+          "name": "Notification ID",
+          "description": "Optional stable ID for replacing or grouping a notification."
+        }
+      }
+    }
+  }
+}
