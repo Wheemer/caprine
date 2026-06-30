@@ -11,6 +11,10 @@
           "port": "Port",
           "token": "Token"
         }
+      },
+      "zeroconf_confirm": {
+        "title": "Add {name}",
+        "description": "Set up this discovered Caprine desktop app as a notification target."
       }
     },
     "error": {

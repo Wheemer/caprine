@@ -5,7 +5,7 @@ from __future__ import annotations
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT, CONF_TOKEN
 
 DOMAIN = "caprine_notify"
-PLATFORMS: list[str] = []
+PLATFORMS: list[str] = ["notify"]
 
 CONF_ICON = "icon"
 CONF_PERSISTENT = "persistent"
@@ -14,7 +14,7 @@ CONF_URL = "url"
 
 DEFAULT_NAME = "GaragePC Caprine"
 DEFAULT_PORT = 32174
-DEFAULT_TIMEOUT = 7
+DEFAULT_TIMEOUT = 15
 DEFAULT_PERSISTENT = False
 
 ATTR_TARGETS = "targets"

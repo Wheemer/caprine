@@ -30,7 +30,7 @@ send_notification:
         boolean:
     timeout:
       required: false
-      default: 7
+      default: 15
       selector:
         number:
           min: 1

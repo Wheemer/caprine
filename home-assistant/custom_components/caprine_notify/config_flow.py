@@ -20,13 +20,15 @@ class CaprineNotifyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Caprine Notify."""
 
     VERSION = 1
+    _discovered_data: dict[str, Any] | None = None
+    _discovered_name: str | None = None
 
     async def async_step_zeroconf(
         self, discovery_info: zeroconf.ZeroconfServiceInfo
     ) -> config_entries.ConfigFlowResult:
         """Handle a Caprine zeroconf discovery."""
         properties = discovery_info.properties
-        host = discovery_info.host
+        host = str(properties.get("host") or discovery_info.host)
         port = discovery_info.port
         name = str(properties.get("name") or discovery_info.name.split(".")[0])
         unique_id = str(properties.get("id") or f"{host}:{port}")
@@ -35,15 +37,30 @@ class CaprineNotifyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._abort_if_unique_id_configured(updates={CONF_HOST: host, CONF_PORT: port})
 
         self.context["title_placeholders"] = {"name": name}
+        self._discovered_name = name
+        self._discovered_data = {
+            CONF_NAME: name,
+            CONF_HOST: host,
+            CONF_PORT: port,
+            CONF_TOKEN: "",
+        }
 
-        return self.async_create_entry(
-            title=name,
-            data={
-                CONF_NAME: name,
-                CONF_HOST: host,
-                CONF_PORT: port,
-                CONF_TOKEN: "",
-            },
+        return await self.async_step_zeroconf_confirm()
+
+    async def async_step_zeroconf_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Confirm a discovered Caprine target."""
+        if user_input is not None:
+            return self.async_create_entry(
+                title=self._discovered_name or DEFAULT_NAME,
+                data=self._discovered_data or {},
+            )
+
+        return self.async_show_form(
+            step_id="zeroconf_confirm",
+            description_placeholders={"name": self._discovered_name or DEFAULT_NAME},
+            data_schema=vol.Schema({}),
         )
 
     async def async_step_user(
